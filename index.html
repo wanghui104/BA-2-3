@@ -18,13 +18,14 @@
             <span>1 概念</span>
             <span>2 数据</span>
             <span>3 静态模型</span>
+            <span>4 交互</span>
           </div>
         </header>
 
         <section class="model-area">
           <div class="scene-card" aria-label="transparent 3D cuboid">
-            <div class="scene">
-              <div class="model-stage">
+            <div class="scene" id="scene">
+              <div class="model-stage" id="modelStage">
                 <div class="cuboid" id="cuboid"></div>
                 <div class="axis-rig" aria-label="3D coordinate axis">
                   <span class="axis axis-x"><b>X</b></span>
@@ -33,6 +34,10 @@
                   <span class="axis-origin"></span>
                 </div>
               </div>
+            </div>
+            <div class="control-bar" aria-label="model controls">
+              <button type="button" id="resetView">重置视角</button>
+              <span id="viewReadout">X -18° · Y -34° · 100%</span>
             </div>
           </div>
 
@@ -46,8 +51,12 @@
               <p>当前只放空字段：标题、正文、类型、坐标、透明度、相邻关系。具体知识内容之后再填。</p>
             </section>
             <section>
-              <h2>静态模型</h2>
-              <p>目前先展示透明 cell、面向屏幕的文字面板、邻接提示和同步方向的三维坐标轴。旋转和缩放留到下一步。</p>
+              <h2>交互模型</h2>
+              <p>当前支持拖拽旋转、滚轮缩放、点击 cell 淡化或恢复。文字面板会尽量保持面向屏幕，方便验证复习时的可读性。</p>
+            </section>
+            <section class="selection-card" id="selectionCard">
+              <h2>当前 Cell</h2>
+              <p id="selectionText">尚未选择。点击任意小长方体查看测试内容。</p>
             </section>
           </aside>
         </section>
