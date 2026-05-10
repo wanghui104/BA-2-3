@@ -36,6 +36,11 @@
               </label>
               <div class="control-bar" aria-label="model controls">
                 <button type="button" id="resetView">重置视角</button>
+                <label class="spacing-control">
+                  <span>间距</span>
+                  <input id="spacingInput" type="range" min="8" max="232" step="1" value="8">
+                  <output id="spacingReadout" for="spacingInput">8 px</output>
+                </label>
                 <span id="viewReadout">X -18 deg · Y -34 deg · 100%</span>
               </div>
               <p class="sr-status" id="selectionText" aria-live="polite">尚未选择。</p>

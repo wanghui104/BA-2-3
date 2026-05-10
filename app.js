@@ -15,6 +15,7 @@ const ZOOM_MIN = 0.55;
 const ZOOM_MAX = 7;
 const DIMENSION_MIN = 1;
 const DIMENSION_MAX = 8;
+const GAP_MIN = gridSpec.gap;
 const ROW_RULES = {
   GLOBAL_MAX: "global-max",
   LOCAL: "local"
@@ -52,6 +53,8 @@ const modelStage = document.querySelector("#modelStage");
 const cuboid = document.querySelector("#cuboid");
 const resetViewButton = document.querySelector("#resetView");
 const viewReadout = document.querySelector("#viewReadout");
+const spacingInput = document.querySelector("#spacingInput");
+const spacingReadout = document.querySelector("#spacingReadout");
 const selectionText = document.querySelector("#selectionText");
 const rowRuleSelect = document.querySelector("#rowRuleSelect");
 const widthInput = document.querySelector("#widthInput");
@@ -67,6 +70,7 @@ const viewState = {
   rotationX: -18,
   rotationY: -34,
   zoom: ZOOM_BASE,
+  gap: GAP_MIN,
   rowRule: ROW_RULES.GLOBAL_MAX,
   selectedId: null,
   dragging: false,
@@ -89,6 +93,14 @@ function getDefaultText(index) {
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
+}
+
+function getMaxGap() {
+  return gridSpec.cellSize.width * 2;
+}
+
+function getGap() {
+  return clamp(viewState.gap, GAP_MIN, getMaxGap());
 }
 
 function toDimension(value, fallback) {
@@ -273,6 +285,7 @@ function renderCell(cell) {
 function renderCells() {
   buildCells();
   cuboid.replaceChildren();
+  updateSpacingControls();
   setCuboidBounds();
   cells.forEach((cell) => {
     cuboid.appendChild(renderCell(cell));
@@ -282,9 +295,10 @@ function renderCells() {
 
 function setCuboidBounds() {
   const { width, height, depth } = gridSpec.cellSize;
-  const totalWidth = state.dimensions.width * width + (state.dimensions.width - 1) * gridSpec.gap;
-  const totalHeight = state.dimensions.height * height + (state.dimensions.height - 1) * gridSpec.gap;
-  const totalDepth = state.dimensions.depth * depth + (state.dimensions.depth - 1) * gridSpec.gap;
+  const gap = getGap();
+  const totalWidth = state.dimensions.width * width + (state.dimensions.width - 1) * gap;
+  const totalHeight = state.dimensions.height * height + (state.dimensions.height - 1) * gap;
+  const totalDepth = state.dimensions.depth * depth + (state.dimensions.depth - 1) * gap;
 
   cuboid.style.width = `${totalWidth}px`;
   cuboid.style.height = `${totalHeight}px`;
@@ -295,11 +309,36 @@ function setCuboidBounds() {
 
 function cellTransform(coord) {
   const { width, height, depth } = gridSpec.cellSize;
-  const x = coord.x * (width + gridSpec.gap);
-  const y = coord.y * (height + gridSpec.gap);
-  const z = coord.z * (depth + gridSpec.gap);
+  const gap = getGap();
+  const x = coord.x * (width + gap);
+  const y = coord.y * (height + gap);
+  const z = coord.z * (depth + gap);
 
   return `translate3d(${x}px, ${y}px, ${z}px)`;
+}
+
+function updateSpacingControls() {
+  const maxGap = getMaxGap();
+  const gap = getGap();
+  spacingInput.min = String(GAP_MIN);
+  spacingInput.max = String(maxGap);
+  spacingInput.value = String(gap);
+  spacingReadout.value = `${gap} px`;
+  spacingReadout.textContent = `${gap} px`;
+}
+
+function applyCellSpacing() {
+  const gap = getGap();
+  viewState.gap = gap;
+  setCuboidBounds();
+  cells.forEach((cell) => {
+    const element = cuboid.querySelector(`[data-cell-id="${cell.id}"]`);
+    if (element) {
+      element.style.transform = cellTransform(cell.coord);
+    }
+  });
+  updateSpacingControls();
+  applyViewTransform();
 }
 
 function updateCellClasses(element, cell) {
@@ -480,6 +519,10 @@ scene.addEventListener("pointerup", handlePointerUp);
 scene.addEventListener("pointercancel", handlePointerUp);
 scene.addEventListener("wheel", handleWheel, { passive: false });
 resetViewButton.addEventListener("click", resetView);
+spacingInput.addEventListener("input", () => {
+  viewState.gap = Number.parseInt(spacingInput.value, 10);
+  applyCellSpacing();
+});
 rowRuleSelect.addEventListener("change", () => {
   viewState.rowRule = rowRuleSelect.value;
   renderCells();

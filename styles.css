@@ -611,6 +611,34 @@ button {
   backdrop-filter: blur(10px);
 }
 
+.spacing-control {
+  flex: 1 1 260px;
+  min-width: 220px;
+  max-width: 420px;
+  display: grid;
+  grid-template-columns: auto minmax(130px, 1fr) 52px;
+  align-items: center;
+  gap: 9px;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.spacing-control input {
+  width: 100%;
+  accent-color: var(--green);
+  cursor: pointer;
+}
+
+.spacing-control output {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: right;
+  white-space: nowrap;
+}
+
 .control-bar button {
   border: 1px solid rgba(28, 36, 48, 0.16);
   border-radius: 6px;
@@ -658,6 +686,8 @@ button {
     left: 10px;
     right: 10px;
     bottom: 10px;
+    flex-wrap: wrap;
+    justify-content: start;
   }
 
   .rule-menu {
@@ -689,6 +719,11 @@ button {
 
   .control-bar span {
     font-size: 12px;
+  }
+
+  .spacing-control {
+    min-width: 100%;
+    grid-template-columns: auto minmax(0, 1fr) 48px;
   }
 
   .dimension-grid {
