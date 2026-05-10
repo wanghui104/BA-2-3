@@ -3,25 +3,12 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>2x2x3 知识长方体原型</title>
+    <title>Board</title>
     <link rel="stylesheet" href="./styles.css">
   </head>
   <body>
     <main class="app-shell">
-      <section class="workspace" aria-label="2x2x3 knowledge cuboid prototype">
-        <header class="topbar">
-          <div>
-            <p class="eyebrow">Knowledge Cuboid Prototype</p>
-            <h1>2x2x3 知识长方体</h1>
-          </div>
-          <div class="status-strip" aria-label="current prototype scope">
-            <span>1 概念</span>
-            <span>2 数据</span>
-            <span>3 静态模型</span>
-            <span>4 交互</span>
-          </div>
-        </header>
-
+      <section class="workspace" aria-label="interactive knowledge cuboid">
         <section class="model-area">
           <div class="scene-card" aria-label="transparent 3D cuboid">
             <div class="scene" id="scene">
@@ -35,30 +22,18 @@
                 </div>
               </div>
             </div>
+            <label class="rule-menu" aria-label="row count rule">
+              <select id="rowRuleSelect">
+                <option value="global-max" selected>所有板子的行数都为n行。其中n为所有板子中，行数最多的那个板子</option>
+                <option value="local">每个板子的行数只服务于该板子</option>
+              </select>
+            </label>
             <div class="control-bar" aria-label="model controls">
               <button type="button" id="resetView">重置视角</button>
-              <span id="viewReadout">X -18° · Y -34° · 100%</span>
+              <span id="viewReadout">X -18 deg · Y -34 deg · 100%</span>
             </div>
+            <p class="sr-status" id="selectionText" aria-live="polite">尚未选择。</p>
           </div>
-
-          <aside class="info-panel" aria-label="prototype notes">
-            <section>
-              <h2>概念</h2>
-              <p>一个透明的 2x2x3 长方体被拆成 12 个小长方体。每个 cell 将来承载一个知识块，相邻 cell 可以建立知识链接。</p>
-            </section>
-            <section>
-              <h2>数据结构</h2>
-              <p>当前只放空字段：标题、正文、类型、坐标、透明度、相邻关系。具体知识内容之后再填。</p>
-            </section>
-            <section>
-              <h2>交互模型</h2>
-              <p>当前支持拖拽旋转、滚轮缩放、点击 cell 淡化或恢复。文字面板会尽量保持面向屏幕，方便验证复习时的可读性。</p>
-            </section>
-            <section class="selection-card" id="selectionCard">
-              <h2>当前 Cell</h2>
-              <p id="selectionText">尚未选择。点击任意小长方体查看测试内容。</p>
-            </section>
-          </aside>
         </section>
       </section>
     </main>

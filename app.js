@@ -10,6 +10,14 @@ const gridSpec = {
   gap: 8
 };
 
+const ZOOM_BASE = 2;
+const ZOOM_MIN = 0.55;
+const ZOOM_MAX = 7;
+const ROW_RULES = {
+  GLOBAL_MAX: "global-max",
+  LOCAL: "local"
+};
+
 const sampleContent = [
   ["Main claim", "核心论点", ["定义问题", "限定范围", "提出判断"]],
   ["Reason A", "第一条理由", ["因果链", "关键证据", "反例边界"]],
@@ -21,9 +29,15 @@ const sampleContent = [
   ["Example", "例子", ["具体场景", "变量变化", "结论回扣"]],
   ["Rule", "判断规则", ["阈值", "例外", "下一步"]],
   ["Memory", "记忆提示", ["关键词", "图像化", "复述句"]],
-  ["Tree", "小决策树", ["问题", "分支", "结果"]],
+  ["Tree", "小决策树", ["问题", "分支", "结果", "反思过程", "总结经验"]],
   ["Review", "复习出口", ["总结", "盲点", "下一轮"]]
 ];
+
+function getSampleRows([, title, points]) {
+  return [title, ...points];
+}
+
+const globalNoteRowCount = Math.max(...sampleContent.map((item) => getSampleRows(item).length));
 
 const cells = Array.from({ length: gridSpec.x * gridSpec.y * gridSpec.z }, (_, index) => {
   const x = index % gridSpec.x;
@@ -72,17 +86,40 @@ const cuboid = document.querySelector("#cuboid");
 const resetViewButton = document.querySelector("#resetView");
 const viewReadout = document.querySelector("#viewReadout");
 const selectionText = document.querySelector("#selectionText");
+const rowRuleSelect = document.querySelector("#rowRuleSelect");
 
 const viewState = {
   rotationX: -18,
   rotationY: -34,
-  zoom: 1,
+  zoom: ZOOM_BASE,
+  rowRule: ROW_RULES.GLOBAL_MAX,
   selectedId: null,
   dragging: false,
   moved: false,
   lastX: 0,
   lastY: 0
 };
+
+function getNoteRows(cell) {
+  const rows = [cell.content.title, ...cell.content.points];
+  const rowCount = getNoteRowCount(cell);
+  while (rows.length < rowCount) {
+    rows.push("");
+  }
+  return rows.slice(0, rowCount);
+}
+
+function getNoteRowCount(cell) {
+  if (viewState.rowRule === ROW_RULES.LOCAL) {
+    return [cell.content.title, ...cell.content.points].length;
+  }
+
+  return globalNoteRowCount;
+}
+
+function getFullText(cell) {
+  return `${cell.label} · ${cell.content.title}: ${cell.content.points.join(" / ")}`;
+}
 
 function renderCell(cell) {
   const element = document.createElement("article");
@@ -91,6 +128,7 @@ function renderCell(cell) {
   element.style.setProperty("--w", `${gridSpec.cellSize.width}px`);
   element.style.setProperty("--h", `${gridSpec.cellSize.height}px`);
   element.style.setProperty("--d", `${gridSpec.cellSize.depth}px`);
+  element.style.setProperty("--note-rows", getNoteRowCount(cell));
   element.style.transform = cellTransform(cell.coord);
   element.setAttribute("aria-label", `${cell.label}, x ${cell.coord.x}, y ${cell.coord.y}, z ${cell.coord.z}`);
 
@@ -105,26 +143,43 @@ function renderCell(cell) {
 
   const note = document.createElement("div");
   note.className = "note";
+  note.title = getFullText(cell);
 
-  const label = document.createElement("strong");
-  label.textContent = cell.content.title;
+  const rowList = document.createElement("ul");
+  rowList.className = "note-lines";
 
-  const meta = document.createElement("span");
-  meta.textContent = `${cell.label} · x:${cell.coord.x} y:${cell.coord.y} z:${cell.coord.z}`;
-
-  const pointList = document.createElement("ul");
-  cell.content.points.forEach((point) => {
+  getNoteRows(cell).forEach((line, index) => {
     const item = document.createElement("li");
-    item.textContent = point;
-    pointList.appendChild(item);
+    item.className = "note-line";
+    item.textContent = line;
+    item.title = line;
+    item.dataset.empty = line ? "false" : "true";
+    item.dataset.row = String(index + 1);
+    rowList.appendChild(item);
   });
+
+  const detail = document.createElement("div");
+  detail.className = "detail-popover";
+  detail.setAttribute("aria-hidden", "true");
+
+  const detailLabel = document.createElement("span");
+  detailLabel.className = "detail-label";
+  detailLabel.textContent = `${cell.label} · ${cell.content.type}`;
+
+  const detailTitle = document.createElement("strong");
+  detailTitle.textContent = cell.content.title;
+
+  const detailPoints = document.createElement("p");
+  detailPoints.textContent = cell.content.points.join(" / ");
+
+  detail.append(detailLabel, detailTitle, detailPoints);
+  note.append(rowList, detail);
+  noteAnchor.appendChild(note);
 
   const pin = document.createElement("span");
   pin.className = "link-pin";
   pin.title = `${cell.links.length} adjacent links`;
 
-  note.append(label, meta, pointList);
-  noteAnchor.appendChild(note);
   element.append(noteAnchor, pin);
   updateCellClasses(element, cell);
 
@@ -134,13 +189,20 @@ function renderCell(cell) {
       return;
     }
 
-    viewState.selectedId = cell.id;
-    cell.opacity = cell.opacity < 1 ? 1 : 0.22;
+    viewState.selectedId = viewState.selectedId === cell.id ? null : cell.id;
     updateAllCellStates();
     updateSelection(cell);
   });
 
   return element;
+}
+
+function renderCells() {
+  cuboid.replaceChildren();
+  cells.forEach((cell) => {
+    cuboid.appendChild(renderCell(cell));
+  });
+  applyViewTransform();
 }
 
 function cellTransform(coord) {
@@ -165,13 +227,13 @@ function updateAllCellStates() {
 }
 
 function updateSelection(cell) {
-  const state = cell.opacity < 1 ? "文字淡化" : "文字恢复";
-  selectionText.textContent = `${cell.label} · ${cell.content.title}：${cell.content.points.join(" / ")}。当前状态：${state}。`;
+  const selected = viewState.selectedId === cell.id;
+  selectionText.textContent = selected ? getFullText(cell) : "尚未选择。";
 }
 
 function applyViewTransform() {
   modelStage.style.transform = `scale(${viewState.zoom}) rotateX(${viewState.rotationX}deg) rotateY(${viewState.rotationY}deg)`;
-  viewReadout.textContent = `X ${Math.round(viewState.rotationX)}° · Y ${Math.round(viewState.rotationY)}° · ${Math.round(viewState.zoom * 100)}%`;
+  viewReadout.textContent = `X ${Math.round(viewState.rotationX)} deg · Y ${Math.round(viewState.rotationY)} deg · ${Math.round((viewState.zoom / ZOOM_BASE) * 100)}%`;
   updateBillboards();
 }
 
@@ -228,27 +290,23 @@ function handlePointerUp(event) {
 
 function handleWheel(event) {
   event.preventDefault();
-  const nextZoom = viewState.zoom - event.deltaY * 0.001;
-  viewState.zoom = clamp(nextZoom, 0.68, 1.42);
+  const nextZoom = viewState.zoom - event.deltaY * 0.003;
+  viewState.zoom = clamp(nextZoom, ZOOM_MIN, ZOOM_MAX);
   applyViewTransform();
 }
 
 function resetView() {
   viewState.rotationX = -18;
   viewState.rotationY = -34;
-  viewState.zoom = 1;
+  viewState.zoom = ZOOM_BASE;
   viewState.selectedId = null;
   cells.forEach((cell) => {
     cell.opacity = 1;
   });
   updateAllCellStates();
-  selectionText.textContent = "尚未选择。点击任意小长方体查看测试内容。";
+  selectionText.textContent = "尚未选择。";
   applyViewTransform();
 }
-
-cells.forEach((cell) => {
-  cuboid.appendChild(renderCell(cell));
-});
 
 scene.addEventListener("pointerdown", handlePointerDown);
 scene.addEventListener("pointermove", handlePointerMove);
@@ -256,12 +314,22 @@ scene.addEventListener("pointerup", handlePointerUp);
 scene.addEventListener("pointercancel", handlePointerUp);
 scene.addEventListener("wheel", handleWheel, { passive: false });
 resetViewButton.addEventListener("click", resetView);
+rowRuleSelect.addEventListener("change", () => {
+  viewState.rowRule = rowRuleSelect.value;
+  renderCells();
+});
+document.addEventListener("click", () => {
+  viewState.selectedId = null;
+  updateAllCellStates();
+  selectionText.textContent = "尚未选择。";
+});
 
-applyViewTransform();
+renderCells();
 
-window.knowledgeCuboidPrototype = {
+window.knowledgeBoard = {
   gridSpec,
   cells,
   viewState,
+  ROW_RULES,
   resetView
 };
