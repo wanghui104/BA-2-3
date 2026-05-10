@@ -209,19 +209,31 @@ h1 {
   transform: rotateX(-90deg) translateZ(calc(var(--h) / 2));
 }
 
+.note-anchor {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transform: translateZ(0);
+  transform-style: preserve-3d;
+  pointer-events: none;
+}
+
 .note {
   position: absolute;
-  left: 8px;
-  top: 10px;
-  width: 108px;
-  min-height: 74px;
+  left: 0;
+  top: 0;
+  width: 94px;
+  min-height: 68px;
   padding: 9px;
   border: 1px solid rgba(28, 36, 48, 0.14);
   border-radius: 6px;
   background: var(--panel);
   color: #223044;
   box-shadow: 0 10px 22px rgba(38, 47, 64, 0.14);
-  transform: translateZ(66px) rotateY(34deg) rotateX(18deg);
+  transform: translate(-50%, -50%) rotateY(34deg) rotateX(18deg);
+  transform-origin: center center;
   transform-style: preserve-3d;
   pointer-events: none;
   transition: opacity 160ms ease, border-color 160ms ease, background 160ms ease;
@@ -281,14 +293,14 @@ h1 {
 
 .link-pin {
   position: absolute;
-  right: 6px;
-  bottom: 6px;
+  left: 50%;
+  top: 50%;
   width: 9px;
   height: 9px;
   border: 2px solid rgba(209, 73, 91, 0.76);
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.7);
-  transform: translateZ(62px);
+  transform: translate(-50%, -50%) translateZ(3px);
   pointer-events: none;
 }
 

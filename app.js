@@ -100,6 +100,9 @@ function renderCell(cell) {
     element.appendChild(face);
   });
 
+  const noteAnchor = document.createElement("div");
+  noteAnchor.className = "note-anchor";
+
   const note = document.createElement("div");
   note.className = "note";
 
@@ -121,7 +124,8 @@ function renderCell(cell) {
   pin.title = `${cell.links.length} adjacent links`;
 
   note.append(label, meta, pointList);
-  element.append(note, pin);
+  noteAnchor.appendChild(note);
+  element.append(noteAnchor, pin);
   updateCellClasses(element, cell);
 
   element.addEventListener("click", (event) => {
@@ -172,7 +176,7 @@ function applyViewTransform() {
 }
 
 function updateBillboards() {
-  const noteTransform = `translateZ(66px) rotateY(${-viewState.rotationY}deg) rotateX(${-viewState.rotationX}deg)`;
+  const noteTransform = `translate(-50%, -50%) rotateY(${-viewState.rotationY}deg) rotateX(${-viewState.rotationX}deg)`;
   const labelTransform = `rotateY(${-viewState.rotationY}deg) rotateX(${-viewState.rotationX}deg)`;
 
   cuboid.querySelectorAll(".note").forEach((note) => {
