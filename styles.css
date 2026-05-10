@@ -208,7 +208,7 @@ button {
   height: 0;
   transform: translateZ(0);
   transform-style: preserve-3d;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .note {
@@ -226,8 +226,44 @@ button {
   transform: translate(-50%, -50%) rotateY(34deg) rotateX(18deg);
   transform-origin: center center;
   transform-style: preserve-3d;
-  pointer-events: none;
+  pointer-events: auto;
   transition: opacity 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.note.is-editing {
+  background: rgba(255, 255, 255, 0.97);
+  border-color: rgba(42, 157, 143, 0.74);
+  box-shadow:
+    0 10px 22px rgba(38, 47, 64, 0.14),
+    0 0 0 2px rgba(42, 157, 143, 0.16);
+}
+
+.note.is-editing .note-lines,
+.note.is-editing .detail-popover {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.note-editor {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  padding: var(--note-pad);
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #223044;
+  font: inherit;
+  font-size: var(--note-font);
+  font-weight: 650;
+  line-height: var(--note-line);
+  resize: none;
+  outline: 0;
+  overflow: hidden;
+  white-space: pre-wrap;
+  pointer-events: auto;
 }
 
 .note-lines {
@@ -274,6 +310,7 @@ button {
   transform: translateX(-50%) translateY(-3px);
   transition: opacity 120ms ease, transform 120ms ease;
   visibility: hidden;
+  pointer-events: none;
 }
 
 .detail-label {
@@ -299,8 +336,7 @@ button {
   line-height: 1.45;
 }
 
-.cell:hover .detail-popover,
-.cell.is-selected .detail-popover {
+.cuboid.has-detail-preview .cell:hover .detail-popover {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
   visibility: visible;
@@ -405,12 +441,18 @@ button {
   transform: rotateY(-90deg);
 }
 
-.rule-menu {
+.preview-filters {
   position: absolute;
   right: 18px;
   top: 14px;
   z-index: 6;
   width: min(390px, calc(100vw - 36px));
+  display: grid;
+  gap: 8px;
+}
+
+.rule-menu {
+  display: block;
 }
 
 .page-config {
@@ -690,7 +732,7 @@ button {
     justify-content: start;
   }
 
-  .rule-menu {
+  .preview-filters {
     right: 10px;
     top: 58px;
     width: min(340px, calc(100vw - 20px));

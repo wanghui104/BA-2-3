@@ -46,6 +46,7 @@ const state = {
 };
 
 let cells = [];
+let editingState = null;
 
 const faces = ["front", "back", "right", "left", "top", "bottom"];
 const scene = document.querySelector("#scene");
@@ -57,6 +58,7 @@ const spacingInput = document.querySelector("#spacingInput");
 const spacingReadout = document.querySelector("#spacingReadout");
 const selectionText = document.querySelector("#selectionText");
 const rowRuleSelect = document.querySelector("#rowRuleSelect");
+const detailPreviewSelect = document.querySelector("#detailPreviewSelect");
 const widthInput = document.querySelector("#widthInput");
 const heightInput = document.querySelector("#heightInput");
 const depthInput = document.querySelector("#depthInput");
@@ -72,6 +74,7 @@ const viewState = {
   zoom: ZOOM_BASE,
   gap: GAP_MIN,
   rowRule: ROW_RULES.GLOBAL_MAX,
+  detailPreview: false,
   selectedId: null,
   dragging: false,
   moved: false,
@@ -85,6 +88,10 @@ function getBoardKey(x, y, z) {
 
 function getBoardIndex(x, y, z) {
   return z * state.dimensions.width * state.dimensions.height + y * state.dimensions.width + x;
+}
+
+function getBoardKeyFromCoord(coord) {
+  return getBoardKey(coord.x, coord.y, coord.z);
 }
 
 function getDefaultText(index) {
@@ -115,8 +122,11 @@ function toDimension(value, fallback) {
 function getTextLines(text) {
   return String(text || "")
     .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
+    .map((line) => line.trim());
+}
+
+function getTextLineCount(text) {
+  return Math.max(1, String(text || "").split(/\r?\n/).length);
 }
 
 function ensureBoardTexts({ reset = false } = {}) {
@@ -134,6 +144,10 @@ function ensureBoardTexts({ reset = false } = {}) {
 
 function getCellAt(x, y, z) {
   return cells.find((cell) => cell.coord.x === x && cell.coord.y === y && cell.coord.z === z);
+}
+
+function getCellById(cellId) {
+  return cells.find((cell) => cell.id === cellId);
 }
 
 function buildCells() {
@@ -181,12 +195,15 @@ function buildCells() {
 }
 
 function getGlobalNoteRowCount() {
-  return Math.max(1, ...cells.map((cell) => [cell.content.title, ...cell.content.points].length));
+  return Math.max(
+    1,
+    ...cells.map((cell) => getTextLineCount(state.boardTexts[getBoardKeyFromCoord(cell.coord)] || ""))
+  );
 }
 
 function getNoteRowCount(cell) {
   if (viewState.rowRule === ROW_RULES.LOCAL) {
-    return Math.max(1, [cell.content.title, ...cell.content.points].length);
+    return getTextLineCount(state.boardTexts[getBoardKeyFromCoord(cell.coord)] || "");
   }
 
   return getGlobalNoteRowCount();
@@ -206,8 +223,132 @@ function getFullText(cell) {
   return `${cell.label}: ${detail}`;
 }
 
+function selectCell(cell) {
+  viewState.selectedId = cell.id;
+  updateAllCellStates();
+  updateSelection(cell);
+}
+
+function clearSelection() {
+  viewState.selectedId = null;
+  updateAllCellStates();
+  selectionText.textContent = "尚未选择。";
+}
+
+function syncEditingRows() {
+  if (!editingState) {
+    return;
+  }
+
+  const activeCell = getCellById(editingState.cellId);
+  if (!activeCell) {
+    return;
+  }
+
+  const activeCount = getTextLineCount(editingState.textarea.value);
+  const rowCount = viewState.rowRule === ROW_RULES.LOCAL
+    ? activeCount
+    : Math.max(getGlobalNoteRowCount(), activeCount);
+
+  if (viewState.rowRule === ROW_RULES.GLOBAL_MAX) {
+    cuboid.querySelectorAll(".cell").forEach((element) => {
+      element.style.setProperty("--note-rows", rowCount);
+    });
+  } else {
+    const element = cuboid.querySelector(`[data-cell-id="${activeCell.id}"]`);
+    if (element) {
+      element.style.setProperty("--note-rows", rowCount);
+    }
+  }
+}
+
+function stopEditing({ commit }) {
+  if (!editingState) {
+    return;
+  }
+
+  const { cellId, key, originalText, textarea } = editingState;
+  const nextText = commit ? textarea.value : originalText;
+  state.boardTexts[key] = nextText;
+  editingState = null;
+  viewState.selectedId = cellId;
+  renderCells();
+  renderConfig();
+
+  const cell = getCellById(cellId);
+  if (cell) {
+    selectCell(cell);
+  }
+}
+
+function beginEditing(cell, note) {
+  if (editingState?.cellId === cell.id) {
+    return;
+  }
+
+  if (editingState) {
+    stopEditing({ commit: true });
+  }
+
+  const key = getBoardKeyFromCoord(cell.coord);
+  const originalText = state.boardTexts[key] || "";
+  viewState.selectedId = cell.id;
+  updateAllCellStates();
+  note.classList.add("is-editing");
+
+  const editor = document.createElement("textarea");
+  editor.className = "note-editor";
+  editor.value = originalText;
+  editor.spellcheck = false;
+  editor.setAttribute("aria-label", `${cell.label} 文本编辑`);
+
+  ["pointerdown", "pointerup", "click", "dblclick", "mousedown", "mouseup"].forEach((eventName) => {
+    editor.addEventListener(eventName, (event) => {
+      event.stopPropagation();
+    });
+  });
+  editor.addEventListener("input", () => {
+    state.boardTexts[key] = editor.value;
+    syncEditingRows();
+  });
+  editor.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      stopEditing({ commit: false });
+      return;
+    }
+
+    if (event.key === "Enter" && !event.shiftKey && !event.altKey) {
+      event.preventDefault();
+      event.stopPropagation();
+      stopEditing({ commit: true });
+      return;
+    }
+
+    if (event.key === "Enter") {
+      window.setTimeout(syncEditingRows, 0);
+    }
+  });
+
+  note.appendChild(editor);
+  editingState = { cellId: cell.id, key, originalText, textarea: editor };
+  syncEditingRows();
+  editor.focus();
+  editor.setSelectionRange(editor.value.length, editor.value.length);
+}
+
+function isPointInsideElement(event, element) {
+  const rect = element.getBoundingClientRect();
+  return event.clientX >= rect.left
+    && event.clientX <= rect.right
+    && event.clientY >= rect.top
+    && event.clientY <= rect.bottom;
+}
+
 function renderCell(cell) {
   const element = document.createElement("article");
+  let cellPointerStart = null;
   element.className = "cell";
   element.dataset.cellId = cell.id;
   element.style.setProperty("--w", `${gridSpec.cellSize.width}px`);
@@ -229,6 +370,33 @@ function renderCell(cell) {
   const note = document.createElement("div");
   note.className = "note";
   note.title = getFullText(cell);
+  note.addEventListener("pointerdown", (event) => {
+    event.stopPropagation();
+  });
+  note.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (viewState.moved) {
+      return;
+    }
+
+    if (editingState) {
+      stopEditing({ commit: true });
+    }
+    selectCell(cell);
+  });
+  note.addEventListener("dblclick", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (viewState.moved) {
+      return;
+    }
+
+    if (editingState) {
+      stopEditing({ commit: true });
+    }
+    selectCell(cell);
+    beginEditing(cell, note);
+  });
 
   const rowList = document.createElement("ul");
   rowList.className = "note-lines";
@@ -268,15 +436,51 @@ function renderCell(cell) {
   element.append(noteAnchor, pin);
   updateCellClasses(element, cell);
 
-  element.addEventListener("click", (event) => {
+  element.addEventListener("pointerdown", (event) => {
     event.stopPropagation();
-    if (viewState.moved) {
+    cellPointerStart = {
+      x: event.clientX,
+      y: event.clientY,
+      wasSelected: viewState.selectedId === cell.id
+    };
+  });
+
+  element.addEventListener("pointerup", (event) => {
+    if (!cellPointerStart) {
       return;
     }
 
-    viewState.selectedId = viewState.selectedId === cell.id ? null : cell.id;
-    updateAllCellStates();
-    updateSelection(cell);
+    event.stopPropagation();
+    const pointerStart = cellPointerStart;
+    const deltaX = Math.abs(event.clientX - pointerStart.x);
+    const deltaY = Math.abs(event.clientY - pointerStart.y);
+    cellPointerStart = null;
+
+    if (deltaX + deltaY > 3) {
+      return;
+    }
+
+    if (editingState) {
+      stopEditing({ commit: true });
+    }
+    selectCell(cell);
+  });
+
+  element.addEventListener("click", (event) => {
+    event.stopPropagation();
+  });
+  element.addEventListener("dblclick", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (viewState.moved || !isPointInsideElement(event, note)) {
+      return;
+    }
+
+    if (editingState) {
+      stopEditing({ commit: true });
+    }
+    selectCell(cell);
+    beginEditing(cell, note);
   });
 
   return element;
@@ -285,6 +489,7 @@ function renderCell(cell) {
 function renderCells() {
   buildCells();
   cuboid.replaceChildren();
+  cuboid.classList.toggle("has-detail-preview", viewState.detailPreview);
   updateSpacingControls();
   setCuboidBounds();
   cells.forEach((cell) => {
@@ -348,6 +553,7 @@ function updateCellClasses(element, cell) {
 
   element.classList.toggle("is-muted", cell.opacity < 1);
   element.classList.toggle("is-selected", cell.id === viewState.selectedId);
+  element.classList.toggle("is-editing", editingState?.cellId === cell.id);
 }
 
 function updateAllCellStates() {
@@ -423,6 +629,10 @@ function renderConfig() {
 }
 
 function syncDimensionsFromInputs({ allowFallback = true } = {}) {
+  if (editingState) {
+    stopEditing({ commit: true });
+  }
+
   const nextWidth = Number.parseInt(widthInput.value, 10);
   const nextHeight = Number.parseInt(heightInput.value, 10);
   const nextDepth = Number.parseInt(depthInput.value, 10);
@@ -501,6 +711,10 @@ function handleWheel(event) {
 }
 
 function resetView() {
+  if (editingState) {
+    stopEditing({ commit: true });
+  }
+
   viewState.rotationX = -18;
   viewState.rotationY = -34;
   viewState.zoom = ZOOM_BASE;
@@ -524,8 +738,16 @@ spacingInput.addEventListener("input", () => {
   applyCellSpacing();
 });
 rowRuleSelect.addEventListener("change", () => {
+  if (editingState) {
+    stopEditing({ commit: true });
+  }
+
   viewState.rowRule = rowRuleSelect.value;
   renderCells();
+});
+detailPreviewSelect.addEventListener("change", () => {
+  viewState.detailPreview = detailPreviewSelect.value === "on";
+  cuboid.classList.toggle("has-detail-preview", viewState.detailPreview);
 });
 
 [widthInput, heightInput, depthInput].forEach((input) => {
@@ -535,6 +757,10 @@ rowRuleSelect.addEventListener("change", () => {
 });
 
 fillDefaultsButton.addEventListener("click", () => {
+  if (editingState) {
+    stopEditing({ commit: true });
+  }
+
   ensureBoardTexts({ reset: true });
   renderCells();
   renderConfig();
@@ -546,10 +772,28 @@ tabButtons.forEach((button) => {
   });
 });
 
-document.addEventListener("click", () => {
-  viewState.selectedId = null;
-  updateAllCellStates();
-  selectionText.textContent = "尚未选择。";
+document.addEventListener("click", (event) => {
+  if (editingState) {
+    if (editingState.textarea.contains(event.target)) {
+      return;
+    }
+
+    stopEditing({ commit: true });
+    return;
+  }
+
+  clearSelection();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || editingState) {
+    return;
+  }
+
+  if (viewState.selectedId) {
+    event.preventDefault();
+    clearSelection();
+  }
 });
 
 ensureBoardTexts();

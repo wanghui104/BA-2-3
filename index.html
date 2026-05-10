@@ -28,12 +28,20 @@
                   </div>
                 </div>
               </div>
-              <label class="rule-menu" aria-label="行数规则">
-                <select id="rowRuleSelect">
-                  <option value="global-max" selected>所有板子的行数都为 n 行，其中 n 为所有板子里文字行数最多的那个板子</option>
-                  <option value="local">每个板子的行数只服务于该板子</option>
-                </select>
-              </label>
+              <div class="preview-filters" aria-label="预览筛选">
+                <label class="rule-menu" aria-label="行数规则">
+                  <select id="rowRuleSelect">
+                    <option value="global-max" selected>所有板子的行数都为 n 行，其中 n 为所有板子里文字行数最多的那个板子</option>
+                    <option value="local">每个板子的行数只服务于该板子</option>
+                  </select>
+                </label>
+                <label class="rule-menu" aria-label="放大白板预览">
+                  <select id="detailPreviewSelect">
+                    <option value="off" selected>放大白板预览：关</option>
+                    <option value="on">放大白板预览：开</option>
+                  </select>
+                </label>
+              </div>
               <div class="control-bar" aria-label="model controls">
                 <button type="button" id="resetView">重置视角</button>
                 <label class="spacing-control">
