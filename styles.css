@@ -35,6 +35,47 @@ button {
   font: inherit;
 }
 
+.page-tabs {
+  position: fixed;
+  left: 16px;
+  top: 14px;
+  z-index: 12;
+  display: flex;
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid rgba(28, 36, 48, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 12px 26px rgba(38, 47, 64, 0.12);
+  backdrop-filter: blur(10px);
+}
+
+.tab-button {
+  min-width: 72px;
+  min-height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #344054;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.tab-button:hover,
+.tab-button.is-active {
+  background: #1c2430;
+  color: #ffffff;
+}
+
+.page {
+  min-height: 100vh;
+}
+
+.page[hidden] {
+  display: none;
+}
+
 .app-shell,
 .workspace,
 .model-area,
@@ -372,6 +413,164 @@ button {
   width: min(390px, calc(100vw - 36px));
 }
 
+.page-config {
+  height: 100vh;
+  overflow: auto;
+}
+
+.config-shell {
+  width: min(1180px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 86px 0 42px;
+}
+
+.config-section {
+  border-top: 1px solid rgba(28, 36, 48, 0.16);
+  padding: 24px 0;
+}
+
+.structure-section {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(300px, 520px);
+  align-items: start;
+  gap: 28px;
+}
+
+.config-section h1,
+.config-section h2,
+.config-section p {
+  margin: 0;
+}
+
+.config-section h1,
+.config-section h2 {
+  color: #1c2430;
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+
+.config-section h1 {
+  font-size: 30px;
+}
+
+.config-section h2 {
+  font-size: 22px;
+}
+
+.config-section p {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.55;
+}
+
+.dimension-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.dimension-grid label,
+.board-field {
+  display: grid;
+  gap: 7px;
+}
+
+.dimension-grid span,
+.board-field-title {
+  color: #344054;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.2;
+}
+
+.dimension-grid input,
+.board-field textarea {
+  width: 100%;
+  border: 1px solid rgba(28, 36, 48, 0.16);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 8px 20px rgba(38, 47, 64, 0.08);
+  color: #223044;
+  font: inherit;
+  font-weight: 700;
+}
+
+.dimension-grid input {
+  height: 44px;
+  padding: 0 12px;
+  font-size: 18px;
+}
+
+.dimension-grid input:focus,
+.board-field textarea:focus {
+  border-color: rgba(42, 157, 143, 0.65);
+  outline: 2px solid rgba(42, 157, 143, 0.18);
+  outline-offset: 1px;
+}
+
+.structure-readout {
+  grid-column: 2;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  width: fit-content;
+  padding: 0 11px;
+  border: 1px solid rgba(53, 125, 237, 0.2);
+  border-radius: 7px;
+  background: rgba(53, 125, 237, 0.08);
+  color: #275aab !important;
+  font-size: 13px !important;
+  font-weight: 850 !important;
+}
+
+.board-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.board-heading button {
+  min-height: 36px;
+  border: 1px solid rgba(28, 36, 48, 0.16);
+  border-radius: 6px;
+  background: #ffffff;
+  color: #263241;
+  padding: 0 13px;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.board-heading button:hover {
+  border-color: rgba(209, 73, 91, 0.45);
+}
+
+.board-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.board-field {
+  min-width: 0;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(28, 36, 48, 0.1);
+}
+
+.board-field textarea {
+  min-height: 116px;
+  max-height: 220px;
+  resize: vertical;
+  padding: 10px 11px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .rule-menu select {
   width: 100%;
   min-height: 38px;
@@ -445,6 +644,11 @@ button {
 }
 
 @media (max-width: 760px) {
+  .page-tabs {
+    left: 10px;
+    top: 10px;
+  }
+
   .model-stage {
     width: 620px;
     height: 520px;
@@ -458,8 +662,22 @@ button {
 
   .rule-menu {
     right: 10px;
-    top: 10px;
+    top: 58px;
     width: min(340px, calc(100vw - 20px));
+  }
+
+  .config-shell {
+    width: min(100vw - 20px, 720px);
+    padding-top: 74px;
+  }
+
+  .structure-section {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+
+  .structure-readout {
+    grid-column: 1;
   }
 }
 
@@ -473,4 +691,12 @@ button {
     font-size: 12px;
   }
 
+  .dimension-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .board-heading {
+    align-items: start;
+    flex-direction: column;
+  }
 }

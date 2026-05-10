@@ -8,33 +8,77 @@
   </head>
   <body>
     <main class="app-shell">
-      <section class="workspace" aria-label="interactive knowledge cuboid">
-        <section class="model-area">
-          <div class="scene-card" aria-label="transparent 3D cuboid">
-            <div class="scene" id="scene">
-              <div class="model-stage" id="modelStage">
-                <div class="cuboid" id="cuboid"></div>
-                <div class="axis-rig" aria-label="3D coordinate axis">
-                  <span class="axis axis-x"><b>X</b></span>
-                  <span class="axis axis-y"><b>Y</b></span>
-                  <span class="axis axis-z"><b>Z</b></span>
-                  <span class="axis-origin"></span>
+      <nav class="page-tabs" aria-label="页面">
+        <button type="button" class="tab-button is-active" data-page-target="previewPage">预览</button>
+        <button type="button" class="tab-button" data-page-target="configPage">配置</button>
+      </nav>
+
+      <section class="page page-preview is-active" id="previewPage" aria-label="结构预览">
+        <section class="workspace" aria-label="interactive knowledge cuboid">
+          <section class="model-area">
+            <div class="scene-card" aria-label="transparent 3D cuboid">
+              <div class="scene" id="scene">
+                <div class="model-stage" id="modelStage">
+                  <div class="cuboid" id="cuboid"></div>
+                  <div class="axis-rig" aria-label="3D coordinate axis">
+                    <span class="axis axis-x"><b>X</b></span>
+                    <span class="axis axis-y"><b>Y</b></span>
+                    <span class="axis axis-z"><b>Z</b></span>
+                    <span class="axis-origin"></span>
+                  </div>
                 </div>
               </div>
+              <label class="rule-menu" aria-label="行数规则">
+                <select id="rowRuleSelect">
+                  <option value="global-max" selected>所有板子的行数都为 n 行，其中 n 为所有板子里文字行数最多的那个板子</option>
+                  <option value="local">每个板子的行数只服务于该板子</option>
+                </select>
+              </label>
+              <div class="control-bar" aria-label="model controls">
+                <button type="button" id="resetView">重置视角</button>
+                <span id="viewReadout">X -18 deg · Y -34 deg · 100%</span>
+              </div>
+              <p class="sr-status" id="selectionText" aria-live="polite">尚未选择。</p>
             </div>
-            <label class="rule-menu" aria-label="row count rule">
-              <select id="rowRuleSelect">
-                <option value="global-max" selected>所有板子的行数都为n行。其中n为所有板子中，行数最多的那个板子</option>
-                <option value="local">每个板子的行数只服务于该板子</option>
-              </select>
-            </label>
-            <div class="control-bar" aria-label="model controls">
-              <button type="button" id="resetView">重置视角</button>
-              <span id="viewReadout">X -18 deg · Y -34 deg · 100%</span>
-            </div>
-            <p class="sr-status" id="selectionText" aria-live="polite">尚未选择。</p>
-          </div>
+          </section>
         </section>
+      </section>
+
+      <section class="page page-config" id="configPage" aria-label="结构配置" hidden>
+        <div class="config-shell">
+          <section class="config-section structure-section" aria-labelledby="structureTitle">
+            <div>
+              <h1 id="structureTitle">结构配置</h1>
+              <p>修改宽、高、深后，下方会自动生成对应数量的板子输入框。</p>
+            </div>
+            <div class="dimension-grid">
+              <label>
+                <span>宽 width</span>
+                <input id="widthInput" type="text" inputmode="numeric" pattern="[0-9]*" value="3">
+              </label>
+              <label>
+                <span>高 height</span>
+                <input id="heightInput" type="text" inputmode="numeric" pattern="[0-9]*" value="2">
+              </label>
+              <label>
+                <span>深 depth</span>
+                <input id="depthInput" type="text" inputmode="numeric" pattern="[0-9]*" value="2">
+              </label>
+            </div>
+            <p class="structure-readout" id="structureReadout">当前共有 12 个板子</p>
+          </section>
+
+          <section class="config-section board-section" aria-labelledby="boardTitle">
+            <div class="board-heading">
+              <div>
+                <h2 id="boardTitle">板子内容配置</h2>
+                <p>每个输入框对应长方体中的一个具体位置，可输入多行文字。</p>
+              </div>
+              <button type="button" id="fillDefaultsButton">填入示例</button>
+            </div>
+            <div class="board-editor-grid" id="boardEditorGrid"></div>
+          </section>
+        </div>
       </section>
     </main>
 
