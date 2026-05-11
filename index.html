@@ -20,6 +20,7 @@
               <div class="scene" id="scene">
                 <div class="model-stage" id="modelStage">
                   <div class="cuboid" id="cuboid"></div>
+                  <div class="slice-controls" id="sliceControls" aria-label="切片尺寸"></div>
                   <div class="axis-rig" aria-label="3D coordinate axis">
                     <span class="axis axis-x"><b>X</b></span>
                     <span class="axis axis-y"><b>Y</b></span>
@@ -41,6 +42,12 @@
                     <option value="on">放大白板预览：开</option>
                   </select>
                 </label>
+                <div class="shape-controls" aria-label="小长方体和文字尺寸">
+                  <label>
+                    <span>文字</span>
+                    <input id="textSizeInput" type="number" min="2" max="24" step="1" value="10">
+                  </label>
+                </div>
               </div>
               <div class="control-bar" aria-label="model controls">
                 <button type="button" id="resetView">重置视角</button>

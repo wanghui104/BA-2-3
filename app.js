@@ -15,6 +15,13 @@ const ZOOM_MIN = 0.55;
 const ZOOM_MAX = 7;
 const DIMENSION_MIN = 1;
 const DIMENSION_MAX = 8;
+const CELL_SIZE_LIMITS = {
+  width: { min: 48, max: 240 },
+  height: { min: 48, max: 220 },
+  depth: { min: 36, max: 220 }
+};
+const TEXT_SIZE_MIN = 2;
+const TEXT_SIZE_MAX = 24;
 const GAP_MIN = gridSpec.gap;
 const ROW_RULES = {
   GLOBAL_MAX: "global-max",
@@ -42,6 +49,11 @@ const state = {
     height: gridSpec.height,
     depth: gridSpec.depth
   },
+  sliceSizes: {
+    widths: Array.from({ length: gridSpec.width }, () => gridSpec.cellSize.width),
+    heights: Array.from({ length: gridSpec.height }, () => gridSpec.cellSize.height),
+    depths: Array.from({ length: gridSpec.depth }, () => gridSpec.cellSize.depth)
+  },
   boardTexts: {}
 };
 
@@ -52,6 +64,7 @@ const faces = ["front", "back", "right", "left", "top", "bottom"];
 const scene = document.querySelector("#scene");
 const modelStage = document.querySelector("#modelStage");
 const cuboid = document.querySelector("#cuboid");
+const sliceControls = document.querySelector("#sliceControls");
 const resetViewButton = document.querySelector("#resetView");
 const viewReadout = document.querySelector("#viewReadout");
 const spacingInput = document.querySelector("#spacingInput");
@@ -59,6 +72,7 @@ const spacingReadout = document.querySelector("#spacingReadout");
 const selectionText = document.querySelector("#selectionText");
 const rowRuleSelect = document.querySelector("#rowRuleSelect");
 const detailPreviewSelect = document.querySelector("#detailPreviewSelect");
+const textSizeInput = document.querySelector("#textSizeInput");
 const widthInput = document.querySelector("#widthInput");
 const heightInput = document.querySelector("#heightInput");
 const depthInput = document.querySelector("#depthInput");
@@ -75,6 +89,7 @@ const viewState = {
   gap: GAP_MIN,
   rowRule: ROW_RULES.GLOBAL_MAX,
   detailPreview: false,
+  textSize: 10,
   selectedId: null,
   dragging: false,
   moved: false,
@@ -103,11 +118,42 @@ function clamp(value, min, max) {
 }
 
 function getMaxGap() {
-  return gridSpec.cellSize.width * 2;
+  return Math.max(...state.sliceSizes.widths, gridSpec.cellSize.width) * 2;
 }
 
 function getGap() {
   return clamp(viewState.gap, GAP_MIN, getMaxGap());
+}
+
+function fitSizeList(list, length, fallback) {
+  const next = list.slice(0, length);
+  while (next.length < length) {
+    next.push(next[next.length - 1] || fallback);
+  }
+  return next;
+}
+
+function syncSliceSizesToDimensions() {
+  state.sliceSizes.widths = fitSizeList(state.sliceSizes.widths, state.dimensions.width, gridSpec.cellSize.width);
+  state.sliceSizes.heights = fitSizeList(state.sliceSizes.heights, state.dimensions.height, gridSpec.cellSize.height);
+  state.sliceSizes.depths = fitSizeList(state.sliceSizes.depths, state.dimensions.depth, gridSpec.cellSize.depth);
+}
+
+function sumList(list) {
+  return list.reduce((total, value) => total + value, 0);
+}
+
+function getSliceOffset(list, index) {
+  const gap = getGap();
+  return list.slice(0, index).reduce((total, value) => total + value + gap, 0);
+}
+
+function getCellSize(coord) {
+  return {
+    width: state.sliceSizes.widths[coord.x] || gridSpec.cellSize.width,
+    height: state.sliceSizes.heights[coord.y] || gridSpec.cellSize.height,
+    depth: state.sliceSizes.depths[coord.z] || gridSpec.cellSize.depth
+  };
 }
 
 function toDimension(value, fallback) {
@@ -117,6 +163,25 @@ function toDimension(value, fallback) {
   }
 
   return clamp(parsed, DIMENSION_MIN, DIMENSION_MAX);
+}
+
+function toCellSize(value, axis, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed)) {
+    return fallback;
+  }
+
+  const limit = CELL_SIZE_LIMITS[axis];
+  return clamp(parsed, limit.min, limit.max);
+}
+
+function toTextSize(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed)) {
+    return fallback;
+  }
+
+  return clamp(parsed, TEXT_SIZE_MIN, TEXT_SIZE_MAX);
 }
 
 function getTextLines(text) {
@@ -399,12 +464,14 @@ function isPointInsideElement(event, element) {
 
 function renderCell(cell) {
   const element = document.createElement("article");
+  const size = getCellSize(cell.coord);
   let cellPointerStart = null;
   element.className = "cell";
   element.dataset.cellId = cell.id;
-  element.style.setProperty("--w", `${gridSpec.cellSize.width}px`);
-  element.style.setProperty("--h", `${gridSpec.cellSize.height}px`);
-  element.style.setProperty("--d", `${gridSpec.cellSize.depth}px`);
+  element.style.setProperty("--w", `${size.width}px`);
+  element.style.setProperty("--h", `${size.height}px`);
+  element.style.setProperty("--d", `${size.depth}px`);
+  element.style.setProperty("--note-font", `${viewState.textSize}px`);
   element.style.setProperty("--note-rows", getNoteRowCount(cell));
   element.style.transform = cellTransform(cell.coord);
   element.setAttribute("aria-label", `${cell.label}, x ${cell.coord.x + 1}, y ${cell.coord.y + 1}, z ${cell.coord.z + 1}`);
@@ -538,6 +605,7 @@ function renderCell(cell) {
 }
 
 function renderCells() {
+  syncSliceSizesToDimensions();
   buildCells();
   cuboid.replaceChildren();
   cuboid.classList.toggle("has-detail-preview", viewState.detailPreview);
@@ -546,29 +614,32 @@ function renderCells() {
   cells.forEach((cell) => {
     cuboid.appendChild(renderCell(cell));
   });
+  renderSliceControls();
   applyViewTransform();
 }
 
 function setCuboidBounds() {
-  const { width, height, depth } = gridSpec.cellSize;
   const gap = getGap();
-  const totalWidth = state.dimensions.width * width + (state.dimensions.width - 1) * gap;
-  const totalHeight = state.dimensions.height * height + (state.dimensions.height - 1) * gap;
-  const totalDepth = state.dimensions.depth * depth + (state.dimensions.depth - 1) * gap;
+  const totalWidth = sumList(state.sliceSizes.widths) + (state.dimensions.width - 1) * gap;
+  const totalHeight = sumList(state.sliceSizes.heights) + (state.dimensions.height - 1) * gap;
+  const totalDepth = sumList(state.sliceSizes.depths) + (state.dimensions.depth - 1) * gap;
 
   cuboid.style.width = `${totalWidth}px`;
   cuboid.style.height = `${totalHeight}px`;
   cuboid.style.left = `calc(50% - ${totalWidth / 2}px)`;
   cuboid.style.top = `calc(50% - ${totalHeight / 2}px)`;
   cuboid.style.transform = `translateZ(${-totalDepth / 2}px)`;
+  sliceControls.style.left = cuboid.style.left;
+  sliceControls.style.top = cuboid.style.top;
+  sliceControls.style.width = cuboid.style.width;
+  sliceControls.style.height = cuboid.style.height;
+  sliceControls.style.transform = cuboid.style.transform;
 }
 
 function cellTransform(coord) {
-  const { width, height, depth } = gridSpec.cellSize;
-  const gap = getGap();
-  const x = coord.x * (width + gap);
-  const y = coord.y * (height + gap);
-  const z = coord.z * (depth + gap);
+  const x = getSliceOffset(state.sliceSizes.widths, coord.x);
+  const y = getSliceOffset(state.sliceSizes.heights, coord.y);
+  const z = getSliceOffset(state.sliceSizes.depths, coord.z);
 
   return `translate3d(${x}px, ${y}px, ${z}px)`;
 }
@@ -576,11 +647,116 @@ function cellTransform(coord) {
 function updateSpacingControls() {
   const maxGap = getMaxGap();
   const gap = getGap();
+  viewState.gap = gap;
   spacingInput.min = String(GAP_MIN);
   spacingInput.max = String(maxGap);
   spacingInput.value = String(gap);
   spacingReadout.value = `${gap} px`;
   spacingReadout.textContent = `${gap} px`;
+}
+
+function updateShapeControls() {
+  textSizeInput.value = viewState.textSize;
+}
+
+function getModelTotals() {
+  const gap = getGap();
+  return {
+    width: sumList(state.sliceSizes.widths) + (state.dimensions.width - 1) * gap,
+    height: sumList(state.sliceSizes.heights) + (state.dimensions.height - 1) * gap,
+    depth: sumList(state.sliceSizes.depths) + (state.dimensions.depth - 1) * gap
+  };
+}
+
+function createSliceControl({ axis, index, label, value, min, max, baseTransform }) {
+  const field = document.createElement("label");
+  field.className = `slice-control slice-control-${axis}`;
+  field.dataset.axis = axis;
+  field.dataset.index = String(index);
+  field.dataset.baseTransform = baseTransform;
+
+  const input = document.createElement("input");
+  input.type = "number";
+  input.min = String(min);
+  input.max = String(max);
+  input.step = "1";
+  input.value = String(value);
+  input.setAttribute("aria-label", `${label}，范围 ${min} 到 ${max}`);
+
+  ["pointerdown", "pointerup", "click", "dblclick", "mousedown", "mouseup"].forEach((eventName) => {
+    field.addEventListener(eventName, (event) => {
+      event.stopPropagation();
+    });
+  });
+
+  input.addEventListener("change", () => syncSliceControlInput(input));
+  input.addEventListener("blur", () => syncSliceControlInput(input));
+  input.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+
+    event.preventDefault();
+    syncSliceControlInput(input);
+    input.blur();
+  });
+
+  field.appendChild(input);
+  return field;
+}
+
+function renderSliceControls() {
+  const { width, height, depth } = getModelTotals();
+  const gap = getGap();
+  const fragment = document.createDocumentFragment();
+
+  state.sliceSizes.widths.forEach((value, index) => {
+    const x = getSliceOffset(state.sliceSizes.widths, index) + value / 2;
+    const y = height + 2;
+    const z = depth - 2;
+    fragment.appendChild(createSliceControl({
+      axis: "width",
+      index,
+      label: `宽 ${index + 1}`,
+      value,
+      min: CELL_SIZE_LIMITS.width.min,
+      max: CELL_SIZE_LIMITS.width.max,
+      baseTransform: `translate3d(${x}px, ${y}px, ${z}px)`
+    }));
+  });
+
+  state.sliceSizes.heights.forEach((value, index) => {
+    const x = 0;
+    const y = getSliceOffset(state.sliceSizes.heights, index) + value / 2;
+    const z = depth;
+    fragment.appendChild(createSliceControl({
+      axis: "height",
+      index,
+      label: `高 ${index + 1}`,
+      value,
+      min: CELL_SIZE_LIMITS.height.min,
+      max: CELL_SIZE_LIMITS.height.max,
+      baseTransform: `translate3d(${x}px, ${y}px, ${z}px)`
+    }));
+  });
+
+  state.sliceSizes.depths.forEach((value, index) => {
+    const x = -6;
+    const y = height + 8 + index * 24;
+    const z = getSliceOffset(state.sliceSizes.depths, index) + value / 2;
+    fragment.appendChild(createSliceControl({
+      axis: "depth",
+      index,
+      label: `深 ${index + 1}`,
+      value,
+      min: CELL_SIZE_LIMITS.depth.min,
+      max: CELL_SIZE_LIMITS.depth.max,
+      baseTransform: `translate3d(${x}px, ${y}px, ${z}px)`
+    }));
+  });
+
+  sliceControls.replaceChildren(fragment);
+  updateBillboards();
 }
 
 function applyCellSpacing() {
@@ -593,6 +769,7 @@ function applyCellSpacing() {
       element.style.transform = cellTransform(cell.coord);
     }
   });
+  renderSliceControls();
   updateSpacingControls();
   applyViewTransform();
 }
@@ -636,6 +813,10 @@ function updateBillboards() {
 
   document.querySelectorAll(".axis b").forEach((label) => {
     label.style.transform = labelTransform;
+  });
+
+  sliceControls.querySelectorAll(".slice-control").forEach((control) => {
+    control.style.transform = `${control.dataset.baseTransform} ${labelTransform}`;
   });
 }
 
@@ -699,10 +880,47 @@ function syncDimensionsFromInputs({ allowFallback = true } = {}) {
   gridSpec.width = state.dimensions.width;
   gridSpec.height = state.dimensions.height;
   gridSpec.depth = state.dimensions.depth;
+  syncSliceSizesToDimensions();
   viewState.selectedId = null;
   ensureBoardTexts();
   renderCells();
   renderConfig();
+}
+
+function syncShapeControlsFromInputs({ allowFallback = true } = {}) {
+  if (editingState) {
+    stopEditing({ commit: true });
+  }
+
+  const nextTextSize = Number.parseInt(textSizeInput.value, 10);
+
+  if (!allowFallback && Number.isNaN(nextTextSize)) {
+    return;
+  }
+
+  viewState.textSize = toTextSize(textSizeInput.value, viewState.textSize);
+  updateShapeControls();
+  renderCells();
+}
+
+function syncSliceControlInput(input) {
+  const field = input.closest(".slice-control");
+  if (!field) {
+    return;
+  }
+
+  if (editingState) {
+    stopEditing({ commit: true });
+  }
+
+  const axis = field.dataset.axis;
+  const index = Number.parseInt(field.dataset.index, 10);
+  const listName = `${axis}s`;
+  const fallback = state.sliceSizes[listName][index];
+  const nextValue = toCellSize(input.value, axis, fallback);
+  state.sliceSizes[listName][index] = nextValue;
+  viewState.selectedId = null;
+  renderCells();
 }
 
 function switchPage(targetId) {
@@ -809,6 +1027,19 @@ detailPreviewSelect.addEventListener("change", () => {
   input.addEventListener("blur", () => syncDimensionsFromInputs());
 });
 
+textSizeInput.addEventListener("input", () => syncShapeControlsFromInputs({ allowFallback: false }));
+textSizeInput.addEventListener("change", () => syncShapeControlsFromInputs());
+textSizeInput.addEventListener("blur", () => syncShapeControlsFromInputs());
+textSizeInput.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") {
+    return;
+  }
+
+  event.preventDefault();
+  syncShapeControlsFromInputs();
+  textSizeInput.blur();
+});
+
 fillDefaultsButton.addEventListener("click", () => {
   if (editingState) {
     stopEditing({ commit: true });
@@ -858,6 +1089,7 @@ document.addEventListener("keydown", (event) => {
 });
 
 ensureBoardTexts();
+updateShapeControls();
 renderCells();
 renderConfig();
 
