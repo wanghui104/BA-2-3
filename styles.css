@@ -421,10 +421,10 @@ button {
   height: 20px;
   border: 0;
   background: transparent;
-  color: currentColor;
+  color: #1c2430;
   font: inherit;
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 10px;
+  font-weight: 400;
   line-height: 20px;
   padding: 0;
   text-align: center;
@@ -438,7 +438,7 @@ button {
 }
 
 .slice-control-width input {
-  left: -34px;
+  left: -17px;
   top: -24px;
 }
 
