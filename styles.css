@@ -266,6 +266,18 @@ button {
   pointer-events: auto;
 }
 
+.note-editor-overlay {
+  position: fixed;
+  inset: auto;
+  z-index: 30;
+  min-height: 0;
+  border: 1px solid rgba(42, 157, 143, 0.74);
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow:
+    0 10px 22px rgba(38, 47, 64, 0.14),
+    0 0 0 2px rgba(42, 157, 143, 0.16);
+}
+
 .note-lines {
   display: grid;
   grid-template-rows: repeat(var(--note-rows), var(--note-line));

@@ -260,6 +260,8 @@ function syncEditingRows() {
       element.style.setProperty("--note-rows", rowCount);
     }
   }
+
+  updateEditingOverlayBounds();
 }
 
 function stopEditing({ commit }) {
@@ -270,6 +272,7 @@ function stopEditing({ commit }) {
   const { cellId, key, originalText, textarea } = editingState;
   const nextText = commit ? textarea.value : originalText;
   state.boardTexts[key] = nextText;
+  textarea.remove();
   editingState = null;
   viewState.selectedId = cellId;
   renderCells();
@@ -297,7 +300,7 @@ function beginEditing(cell, note) {
   note.classList.add("is-editing");
 
   const editor = document.createElement("textarea");
-  editor.className = "note-editor";
+  editor.className = "note-editor note-editor-overlay";
   editor.value = originalText;
   editor.spellcheck = false;
   editor.setAttribute("aria-label", `${cell.label} 文本编辑`);
@@ -331,11 +334,59 @@ function beginEditing(cell, note) {
     }
   });
 
-  note.appendChild(editor);
-  editingState = { cellId: cell.id, key, originalText, textarea: editor };
+  document.body.appendChild(editor);
+  editingState = { cellId: cell.id, key, originalText, textarea: editor, note, noteRect: null };
   syncEditingRows();
+  updateEditingOverlayBounds();
   editor.focus();
   editor.setSelectionRange(editor.value.length, editor.value.length);
+}
+
+function toPixels(value) {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function scaleBoxValue(value, scale) {
+  return value
+    .split(/\s+/)
+    .map((part) => `${toPixels(part) * scale}px`)
+    .join(" ");
+}
+
+function updateEditingOverlayBounds() {
+  if (!editingState) {
+    return;
+  }
+
+  const { note, textarea } = editingState;
+  if (!note.isConnected || !textarea.isConnected) {
+    return;
+  }
+
+  const rect = note.getBoundingClientRect();
+  const noteStyle = window.getComputedStyle(note);
+  const lineStyle = window.getComputedStyle(note.querySelector(".note-line") || note);
+  const visualScale = note.offsetHeight > 0 ? rect.height / note.offsetHeight : 1;
+  const fontSize = toPixels(lineStyle.fontSize) * visualScale;
+  const lineHeight = toPixels(lineStyle.lineHeight) * visualScale;
+
+  editingState.noteRect = {
+    left: rect.left,
+    right: rect.right,
+    top: rect.top,
+    bottom: rect.bottom
+  };
+
+  textarea.style.left = `${rect.left}px`;
+  textarea.style.top = `${rect.top}px`;
+  textarea.style.width = `${rect.width}px`;
+  textarea.style.height = `${rect.height}px`;
+  textarea.style.padding = scaleBoxValue(noteStyle.padding, visualScale);
+  textarea.style.borderRadius = noteStyle.borderRadius;
+  textarea.style.fontSize = `${fontSize}px`;
+  textarea.style.fontWeight = lineStyle.fontWeight;
+  textarea.style.lineHeight = `${lineHeight}px`;
 }
 
 function isPointInsideElement(event, element) {
@@ -572,6 +623,7 @@ function applyViewTransform() {
   modelStage.style.transform = `scale(${viewState.zoom}) rotateX(${viewState.rotationX}deg) rotateY(${viewState.rotationY}deg)`;
   viewReadout.textContent = `X ${Math.round(viewState.rotationX)} deg · Y ${Math.round(viewState.rotationY)} deg · ${Math.round((viewState.zoom / ZOOM_BASE) * 100)}%`;
   updateBillboards();
+  updateEditingOverlayBounds();
 }
 
 function updateBillboards() {
@@ -732,6 +784,7 @@ scene.addEventListener("pointermove", handlePointerMove);
 scene.addEventListener("pointerup", handlePointerUp);
 scene.addEventListener("pointercancel", handlePointerUp);
 scene.addEventListener("wheel", handleWheel, { passive: false });
+window.addEventListener("resize", updateEditingOverlayBounds);
 resetViewButton.addEventListener("click", resetView);
 spacingInput.addEventListener("input", () => {
   viewState.gap = Number.parseInt(spacingInput.value, 10);
@@ -774,7 +827,15 @@ tabButtons.forEach((button) => {
 
 document.addEventListener("click", (event) => {
   if (editingState) {
-    if (editingState.textarea.contains(event.target)) {
+    const rect = editingState.noteRect;
+    const isInsideNote = rect
+      && event.clientX >= rect.left
+      && event.clientX <= rect.right
+      && event.clientY >= rect.top
+      && event.clientY <= rect.bottom;
+
+    if (editingState.textarea.contains(event.target) || isInsideNote) {
+      editingState.textarea.focus();
       return;
     }
 
