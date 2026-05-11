@@ -742,8 +742,8 @@ function renderSliceControls() {
 
   state.sliceSizes.depths.forEach((value, index) => {
     const x = -6;
-    const y = height + 8 + index * 24;
-    const z = getSliceOffset(state.sliceSizes.depths, index) + value / 2;
+    const y = height + 24;
+    const z = getSliceOffset(state.sliceSizes.depths, index) + value / 2 - 30;
     fragment.appendChild(createSliceControl({
       axis: "depth",
       index,
