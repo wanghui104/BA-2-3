@@ -168,6 +168,20 @@ function getGlobalEdgePoint(coord, edgeNumber) {
   };
 }
 
+function isMaxYMaxZEdge(coord, edge) {
+  const size = getCellSize(coord);
+  const totals = getModelTotals();
+  const globalY = getSliceOffset(state.sliceSizes.heights, coord.y) + edge.y;
+  const globalZ = getSliceOffset(state.sliceSizes.depths, coord.z) + edge.z;
+  const maxZ = getSliceOffset(state.sliceSizes.depths, state.dimensions.depth - 1)
+    + state.sliceSizes.depths[state.dimensions.depth - 1] / 2
+    + 1;
+
+  return Math.abs(globalY - totals.height) < 0.01
+    && Math.abs(globalZ - maxZ) < 0.01
+    && edge.y === size.height;
+}
+
 function toDimension(value, fallback) {
   const parsed = Number.parseInt(value, 10);
   if (Number.isNaN(parsed)) {
@@ -536,7 +550,7 @@ function renderCell(cell) {
   getEdgeLabelSpecs(size).forEach((edge) => {
     const edgeKey = `${cellNumber}-${edge.number}`;
     element.appendChild(createCellBillboardLabel({
-      className: "edge-label cell-billboard-label",
+      className: `edge-label cell-billboard-label${isMaxYMaxZEdge(cell.coord, edge) ? " is-max-y-max-z" : ""}`,
       text: String(edge.number),
       baseTransform: `translate3d(${edge.x}px, ${edge.y}px, ${edge.z}px) translate(-50%, -50%)`,
       title: edgeKey
@@ -773,11 +787,11 @@ function renderSliceControls() {
   const fragment = document.createDocumentFragment();
 
   state.sliceSizes.widths.forEach((value, index) => {
-    const anchorCoord = [
-      { x: 0, y: 1, z: 1 },
-      { x: 1, y: 1, z: 1 },
-      { x: 2, y: 1, z: 1 }
-    ][index];
+    const anchorCoord = {
+      x: index,
+      y: state.dimensions.height - 1,
+      z: state.dimensions.depth - 1
+    };
     const edgePoint = getGlobalEdgePoint(anchorCoord, 3);
     fragment.appendChild(createSliceControl({
       axis: "width",
@@ -804,10 +818,11 @@ function renderSliceControls() {
   });
 
   state.sliceSizes.depths.forEach((value, index) => {
-    const anchorCoord = [
-      { x: 0, y: 1, z: 0 },
-      { x: 0, y: 1, z: 1 }
-    ][index];
+    const anchorCoord = {
+      x: 0,
+      y: state.dimensions.height - 1,
+      z: index
+    };
     const edgePoint = getGlobalEdgePoint(anchorCoord, 12);
     fragment.appendChild(createSliceControl({
       axis: "depth",
@@ -956,6 +971,12 @@ function syncDimensionsFromInputs({ allowFallback = true } = {}) {
   renderConfig();
 }
 
+function resetDimensionInputs() {
+  widthInput.value = state.dimensions.width;
+  heightInput.value = state.dimensions.height;
+  depthInput.value = state.dimensions.depth;
+}
+
 function syncShapeControlsFromInputs({ allowFallback = true } = {}) {
   if (editingState) {
     stopEditing({ commit: true });
@@ -1095,9 +1116,21 @@ markerVisibilitySelect.addEventListener("change", () => {
 });
 
 [widthInput, heightInput, depthInput].forEach((input) => {
-  input.addEventListener("input", () => syncDimensionsFromInputs({ allowFallback: false }));
-  input.addEventListener("change", () => syncDimensionsFromInputs());
-  input.addEventListener("blur", () => syncDimensionsFromInputs());
+  input.addEventListener("blur", resetDimensionInputs);
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      syncDimensionsFromInputs();
+      input.blur();
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      resetDimensionInputs();
+      input.blur();
+    }
+  });
 });
 
 textSizeInput.addEventListener("input", () => syncShapeControlsFromInputs({ allowFallback: false }));

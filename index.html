@@ -30,6 +30,26 @@
                 </div>
               </div>
               <div class="preview-filters" aria-label="预览筛选">
+                <div class="preview-dimensions" aria-labelledby="previewStructureTitle">
+                  <div class="preview-dimensions-heading">
+                    <h2 id="previewStructureTitle">结构配置</h2>
+                    <p class="structure-readout" id="structureReadout">当前共有 12 个板子</p>
+                  </div>
+                  <div class="dimension-grid dimension-grid-preview">
+                    <label>
+                      <span>宽 width</span>
+                      <input id="widthInput" type="text" inputmode="numeric" pattern="[0-9]*" value="3">
+                    </label>
+                    <label>
+                      <span>高 height</span>
+                      <input id="heightInput" type="text" inputmode="numeric" pattern="[0-9]*" value="2">
+                    </label>
+                    <label>
+                      <span>深 depth</span>
+                      <input id="depthInput" type="text" inputmode="numeric" pattern="[0-9]*" value="2">
+                    </label>
+                  </div>
+                </div>
                 <label class="rule-menu" aria-label="行数规则">
                   <select id="rowRuleSelect">
                     <option value="global-max" selected>所有板子的行数都为 n 行，其中 n 为所有板子里文字行数最多的那个板子</option>
@@ -72,28 +92,6 @@
 
       <section class="page page-config" id="configPage" aria-label="结构配置" hidden>
         <div class="config-shell">
-          <section class="config-section structure-section" aria-labelledby="structureTitle">
-            <div>
-              <h1 id="structureTitle">结构配置</h1>
-              <p>修改宽、高、深后，下方会自动生成对应数量的板子输入框。</p>
-            </div>
-            <div class="dimension-grid">
-              <label>
-                <span>宽 width</span>
-                <input id="widthInput" type="text" inputmode="numeric" pattern="[0-9]*" value="3">
-              </label>
-              <label>
-                <span>高 height</span>
-                <input id="heightInput" type="text" inputmode="numeric" pattern="[0-9]*" value="2">
-              </label>
-              <label>
-                <span>深 depth</span>
-                <input id="depthInput" type="text" inputmode="numeric" pattern="[0-9]*" value="2">
-              </label>
-            </div>
-            <p class="structure-readout" id="structureReadout">当前共有 12 个板子</p>
-          </section>
-
           <section class="config-section board-section" aria-labelledby="boardTitle">
             <div class="board-heading">
               <div>
