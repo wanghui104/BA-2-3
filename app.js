@@ -72,6 +72,7 @@ const spacingReadout = document.querySelector("#spacingReadout");
 const selectionText = document.querySelector("#selectionText");
 const rowRuleSelect = document.querySelector("#rowRuleSelect");
 const detailPreviewSelect = document.querySelector("#detailPreviewSelect");
+const markerVisibilitySelect = document.querySelector("#markerVisibilitySelect");
 const textSizeInput = document.querySelector("#textSizeInput");
 const widthInput = document.querySelector("#widthInput");
 const heightInput = document.querySelector("#heightInput");
@@ -89,6 +90,7 @@ const viewState = {
   gap: GAP_MIN,
   rowRule: ROW_RULES.GLOBAL_MAX,
   detailPreview: false,
+  markersVisible: false,
   textSize: 10,
   selectedId: null,
   dragging: false,
@@ -533,9 +535,8 @@ function renderCell(cell) {
 
   getEdgeLabelSpecs(size).forEach((edge) => {
     const edgeKey = `${cellNumber}-${edge.number}`;
-    const isMarkedEdge = edgeKey === "1-8" || edgeKey === "4-8";
     element.appendChild(createCellBillboardLabel({
-      className: `edge-label cell-billboard-label${isMarkedEdge ? " is-marked-edge" : ""}`,
+      className: "edge-label cell-billboard-label",
       text: String(edge.number),
       baseTransform: `translate3d(${edge.x}px, ${edge.y}px, ${edge.z}px) translate(-50%, -50%)`,
       title: edgeKey
@@ -669,6 +670,7 @@ function renderCells() {
   buildCells();
   cuboid.replaceChildren();
   cuboid.classList.toggle("has-detail-preview", viewState.detailPreview);
+  cuboid.classList.toggle("has-markers", viewState.markersVisible);
   updateSpacingControls();
   setCuboidBounds();
   cells.forEach((cell) => {
@@ -1086,6 +1088,10 @@ rowRuleSelect.addEventListener("change", () => {
 detailPreviewSelect.addEventListener("change", () => {
   viewState.detailPreview = detailPreviewSelect.value === "on";
   cuboid.classList.toggle("has-detail-preview", viewState.detailPreview);
+});
+markerVisibilitySelect.addEventListener("change", () => {
+  viewState.markersVisible = markerVisibilitySelect.value === "on";
+  cuboid.classList.toggle("has-markers", viewState.markersVisible);
 });
 
 [widthInput, heightInput, depthInput].forEach((input) => {

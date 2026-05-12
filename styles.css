@@ -229,8 +229,18 @@ button {
   width: 12px;
 }
 
-.edge-label.is-marked-edge {
-  color: #7c3aed;
+.cell-number,
+.edge-label,
+.link-pin {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.cuboid.has-markers .cell-number,
+.cuboid.has-markers .edge-label,
+.cuboid.has-markers .link-pin {
+  opacity: 1;
+  visibility: visible;
 }
 
 .note-anchor {
