@@ -472,7 +472,7 @@ button {
 
 .slice-control-width input {
   left: -17px;
-  top: -24px;
+  top: -10px;
 }
 
 .slice-control-height input {
@@ -481,8 +481,8 @@ button {
 }
 
 .slice-control-depth input {
-  left: -30px;
-  top: -24px;
+  left: -17px;
+  top: -10px;
 }
 
 .slice-control input:focus-visible {

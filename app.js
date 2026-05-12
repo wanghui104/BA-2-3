@@ -771,9 +771,12 @@ function renderSliceControls() {
   const fragment = document.createDocumentFragment();
 
   state.sliceSizes.widths.forEach((value, index) => {
-    const x = getSliceOffset(state.sliceSizes.widths, index) + value / 2;
-    const y = height + 24;
-    const z = depth - 26;
+    const anchorCoord = [
+      { x: 0, y: 1, z: 1 },
+      { x: 1, y: 1, z: 1 },
+      { x: 2, y: 1, z: 1 }
+    ][index];
+    const edgePoint = getGlobalEdgePoint(anchorCoord, 3);
     fragment.appendChild(createSliceControl({
       axis: "width",
       index,
@@ -781,7 +784,7 @@ function renderSliceControls() {
       value,
       min: CELL_SIZE_LIMITS.width.min,
       max: CELL_SIZE_LIMITS.width.max,
-      baseTransform: `translate3d(${x}px, ${y}px, ${z}px)`
+      baseTransform: `translate3d(${edgePoint.x}px, ${edgePoint.y + 12}px, ${edgePoint.z + 12}px)`
     }));
   });
 
@@ -799,9 +802,11 @@ function renderSliceControls() {
   });
 
   state.sliceSizes.depths.forEach((value, index) => {
-    const x = -6;
-    const y = height + 24;
-    const z = getSliceOffset(state.sliceSizes.depths, index) + value / 2 - 30;
+    const anchorCoord = [
+      { x: 0, y: 1, z: 0 },
+      { x: 0, y: 1, z: 1 }
+    ][index];
+    const edgePoint = getGlobalEdgePoint(anchorCoord, 12);
     fragment.appendChild(createSliceControl({
       axis: "depth",
       index,
@@ -809,7 +814,7 @@ function renderSliceControls() {
       value,
       min: CELL_SIZE_LIMITS.depth.min,
       max: CELL_SIZE_LIMITS.depth.max,
-      baseTransform: `translate3d(${x}px, ${y}px, ${z}px)`
+      baseTransform: `translate3d(${edgePoint.x - 12}px, ${edgePoint.y + 12}px, ${edgePoint.z}px)`
     }));
   });
 
