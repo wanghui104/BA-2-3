@@ -156,6 +156,16 @@ function getCellSize(coord) {
   };
 }
 
+function getGlobalEdgePoint(coord, edgeNumber) {
+  const size = getCellSize(coord);
+  const edge = getEdgeLabelSpecs(size).find((item) => item.number === edgeNumber);
+  return {
+    x: getSliceOffset(state.sliceSizes.widths, coord.x) + edge.x,
+    y: getSliceOffset(state.sliceSizes.heights, coord.y) + edge.y,
+    z: getSliceOffset(state.sliceSizes.depths, coord.z) + edge.z
+  };
+}
+
 function toDimension(value, fallback) {
   const parsed = Number.parseInt(value, 10);
   if (Number.isNaN(parsed)) {
@@ -462,9 +472,41 @@ function isPointInsideElement(event, element) {
     && event.clientY <= rect.bottom;
 }
 
+function createCellBillboardLabel({ className, text, baseTransform, title }) {
+  const label = document.createElement("span");
+  label.className = className;
+  label.textContent = text;
+  label.title = title;
+  label.dataset.baseTransform = baseTransform;
+  label.style.transform = baseTransform;
+  return label;
+}
+
+function getEdgeLabelSpecs(size) {
+  const { width, height, depth } = size;
+  const frontZ = depth / 2 + 1;
+  const backZ = -depth / 2 - 1;
+
+  return [
+    { number: 1, x: width / 2, y: 0, z: frontZ },
+    { number: 2, x: width, y: height / 2, z: frontZ },
+    { number: 3, x: width / 2, y: height, z: frontZ },
+    { number: 4, x: 0, y: height / 2, z: frontZ },
+    { number: 5, x: width / 2, y: 0, z: backZ },
+    { number: 6, x: width, y: height / 2, z: backZ },
+    { number: 7, x: width / 2, y: height, z: backZ },
+    { number: 8, x: 0, y: height / 2, z: backZ },
+    { number: 9, x: 0, y: 0, z: 0 },
+    { number: 10, x: width, y: 0, z: 0 },
+    { number: 11, x: width, y: height, z: 0 },
+    { number: 12, x: 0, y: height, z: 0 }
+  ];
+}
+
 function renderCell(cell) {
   const element = document.createElement("article");
   const size = getCellSize(cell.coord);
+  const cellNumber = getBoardIndex(cell.coord.x, cell.coord.y, cell.coord.z) + 1;
   let cellPointerStart = null;
   element.className = "cell";
   element.dataset.cellId = cell.id;
@@ -480,6 +522,24 @@ function renderCell(cell) {
     const face = document.createElement("span");
     face.className = `face ${faceName}`;
     element.appendChild(face);
+  });
+
+  element.appendChild(createCellBillboardLabel({
+    className: "cell-number cell-billboard-label",
+    text: String(cellNumber),
+    baseTransform: `translate3d(8px, 12px, ${size.depth / 2 + 2}px)`,
+    title: `小长方体 ${cellNumber}`
+  }));
+
+  getEdgeLabelSpecs(size).forEach((edge) => {
+    const edgeKey = `${cellNumber}-${edge.number}`;
+    const isMarkedEdge = edgeKey === "1-8" || edgeKey === "4-8";
+    element.appendChild(createCellBillboardLabel({
+      className: `edge-label cell-billboard-label${isMarkedEdge ? " is-marked-edge" : ""}`,
+      text: String(edge.number),
+      baseTransform: `translate3d(${edge.x}px, ${edge.y}px, ${edge.z}px) translate(-50%, -50%)`,
+      title: edgeKey
+    }));
   });
 
   const noteAnchor = document.createElement("div");
@@ -726,9 +786,7 @@ function renderSliceControls() {
   });
 
   state.sliceSizes.heights.forEach((value, index) => {
-    const x = 0;
-    const y = getSliceOffset(state.sliceSizes.heights, index) + value / 2;
-    const z = depth;
+    const edgePoint = getGlobalEdgePoint({ x: 0, y: index, z: 0 }, 8);
     fragment.appendChild(createSliceControl({
       axis: "height",
       index,
@@ -736,7 +794,7 @@ function renderSliceControls() {
       value,
       min: CELL_SIZE_LIMITS.height.min,
       max: CELL_SIZE_LIMITS.height.max,
-      baseTransform: `translate3d(${x}px, ${y}px, ${z}px)`
+      baseTransform: `translate3d(${edgePoint.x - 12}px, ${edgePoint.y}px, ${edgePoint.z - 12}px)`
     }));
   });
 
@@ -813,6 +871,10 @@ function updateBillboards() {
 
   document.querySelectorAll(".axis b").forEach((label) => {
     label.style.transform = labelTransform;
+  });
+
+  cuboid.querySelectorAll(".cell-billboard-label").forEach((label) => {
+    label.style.transform = `${label.dataset.baseTransform} ${labelTransform}`;
   });
 
   sliceControls.querySelectorAll(".slice-control").forEach((control) => {

@@ -200,6 +200,39 @@ button {
   transform: rotateX(-90deg) translateZ(calc(var(--h) / 2));
 }
 
+.cell-billboard-label {
+  position: absolute;
+  z-index: 2;
+  min-width: 12px;
+  height: 12px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.66);
+  color: rgba(28, 36, 48, 0.72);
+  font-size: 8px;
+  font-weight: 500;
+  line-height: 1;
+  pointer-events: none;
+  transform-style: preserve-3d;
+}
+
+.cell-number {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.78);
+  color: #7c3aed;
+  font-size: 9px;
+}
+
+.edge-label {
+  width: 12px;
+}
+
+.edge-label.is-marked-edge {
+  color: #7c3aed;
+}
+
 .note-anchor {
   position: absolute;
   left: 50%;
@@ -443,8 +476,8 @@ button {
 }
 
 .slice-control-height input {
-  left: -42px;
-  top: -18px;
+  left: -17px;
+  top: -10px;
 }
 
 .slice-control-depth input {
