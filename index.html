@@ -15,6 +15,35 @@
         <span class="save-status" id="saveStatus" aria-live="polite">未保存</span>
       </div>
 
+      <div class="text-format-toolbar top-format-toolbar" id="topFormatToolbar" aria-label="文字格式">
+        <button type="button" data-format-action="superscript" title="Superscript Ctrl+.">x2</button>
+        <button type="button" data-format-action="subscript" title="Subscript Ctrl+,">x_</button>
+        <span class="format-divider"></span>
+        <button type="button" data-format-action="heading" title="Heading">H</button>
+        <button type="button" data-format-action="paragraph" title="Paragraph">P</button>
+        <div class="format-menu">
+          <button type="button" data-format-action="bullet" title="Bullet">•</button>
+          <button type="button" class="format-menu-toggle" title="Bullet styles">▾</button>
+          <div class="format-popover" aria-label="Bullet styles">
+            <button type="button" data-format-action="bullet" data-list-style="disc" title="Filled circle">•</button>
+            <button type="button" data-format-action="bullet" data-list-style="circle" title="Hollow circle">○</button>
+            <button type="button" data-format-action="bullet" data-list-style="diamond" title="Diamond">◆</button>
+          </div>
+        </div>
+        <div class="format-menu">
+          <button type="button" data-format-action="numbered" title="Numbered">1.</button>
+          <button type="button" class="format-menu-toggle" title="Number styles">▾</button>
+          <div class="format-popover" aria-label="Number styles">
+            <button type="button" data-format-action="numbered" data-list-style="decimal" title="Decimal">1.</button>
+            <button type="button" data-format-action="numbered" data-list-style="lower-alpha" title="Lower alpha">a.</button>
+            <button type="button" data-format-action="numbered" data-list-style="lower-roman" title="Lower roman">i.</button>
+          </div>
+        </div>
+        <span class="format-divider"></span>
+        <button type="button" data-format-action="outdent" title="Outdent">&lt;</button>
+        <button type="button" data-format-action="indent" title="Indent">&gt;</button>
+      </div>
+
       <section class="page page-preview is-active" id="previewPage" aria-label="结构预览">
         <section class="workspace" aria-label="interactive knowledge cuboid">
           <section class="model-area">

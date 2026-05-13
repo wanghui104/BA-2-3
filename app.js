@@ -29,6 +29,17 @@ const ROW_RULES = {
   GLOBAL_MAX: "global-max",
   LOCAL: "local"
 };
+const BLOCK_TYPES = {
+  HEADING: "heading",
+  PARAGRAPH: "paragraph",
+  BULLET: "bullet",
+  NUMBERED: "numbered"
+};
+const INLINE_MARK_TYPES = new Set(["superscript", "subscript"]);
+const INDENT_MIN = 0;
+const INDENT_MAX = 4;
+const BULLET_LIST_STYLES = ["disc", "circle", "diamond"];
+const NUMBERED_LIST_STYLES = ["decimal", "lower-alpha", "lower-roman"];
 
 const sampleTexts = [
   "核心论点\n定义问题\n限定范围\n提出判断",
@@ -84,6 +95,7 @@ const undoButton = document.querySelector("#undoButton");
 const redoButton = document.querySelector("#redoButton");
 const saveButton = document.querySelector("#saveButton");
 const saveStatus = document.querySelector("#saveStatus");
+const topFormatToolbar = document.querySelector("#topFormatToolbar");
 
 const viewState = {
   rotationX: -18,
@@ -483,7 +495,9 @@ function createTextBlocks(text) {
 
   return safeLines.map((line, index) => ({
     id: `block-${index + 1}`,
-    type: index === 0 ? "heading" : "bullet",
+    type: index === 0 ? BLOCK_TYPES.HEADING : BLOCK_TYPES.BULLET,
+    indent: 0,
+    listStyle: index === 0 ? null : "disc",
     text: line,
     marks: []
   }));
@@ -497,6 +511,78 @@ function createBoardFromText(key, text) {
   };
 }
 
+function normalizeBlockType(type, index) {
+  if (Object.values(BLOCK_TYPES).includes(type)) {
+    return type;
+  }
+
+  return index === 0 ? BLOCK_TYPES.HEADING : BLOCK_TYPES.BULLET;
+}
+
+function isListBlockType(type) {
+  return type === BLOCK_TYPES.BULLET || type === BLOCK_TYPES.NUMBERED;
+}
+
+function getDefaultListStyle(type, indent = 0) {
+  if (type === BLOCK_TYPES.NUMBERED) {
+    return NUMBERED_LIST_STYLES[Math.min(indent, NUMBERED_LIST_STYLES.length - 1)];
+  }
+
+  if (type === BLOCK_TYPES.BULLET) {
+    return BULLET_LIST_STYLES[Math.min(indent, BULLET_LIST_STYLES.length - 1)];
+  }
+
+  return null;
+}
+
+function normalizeListStyle(type, listStyle, indent = 0) {
+  if (type === BLOCK_TYPES.BULLET && BULLET_LIST_STYLES.includes(listStyle)) {
+    return listStyle;
+  }
+
+  if (type === BLOCK_TYPES.NUMBERED && NUMBERED_LIST_STYLES.includes(listStyle)) {
+    return listStyle;
+  }
+
+  return getDefaultListStyle(type, indent);
+}
+
+function normalizeMark(mark, textLength) {
+  if (!mark || !INLINE_MARK_TYPES.has(mark.type)) {
+    return null;
+  }
+
+  const start = clamp(Number.parseInt(mark.start, 10) || 0, 0, textLength);
+  const end = clamp(Number.parseInt(mark.end, 10) || 0, 0, textLength);
+  if (end <= start) {
+    return null;
+  }
+
+  return { type: mark.type, start, end };
+}
+
+function normalizeBlock(block, index) {
+  const text = String(block?.text || "");
+  const type = normalizeBlockType(block?.type, index);
+  const indent = clamp(Number.parseInt(block?.indent, 10) || 0, INDENT_MIN, INDENT_MAX);
+  const marks = Array.isArray(block?.marks)
+    ? block.marks.map((mark) => normalizeMark(mark, text.length)).filter(Boolean)
+    : [];
+  const normalizedBlock = {
+    id: block?.id || `block-${index + 1}`,
+    type,
+    indent,
+    text,
+    marks
+  };
+
+  if (isListBlockType(type)) {
+    normalizedBlock.listStyle = normalizeListStyle(type, block?.listStyle, indent);
+  }
+
+  return normalizedBlock;
+}
+
 function normalizeBoard(key, board) {
   if (typeof board === "string") {
     return createBoardFromText(key, board);
@@ -508,19 +594,22 @@ function normalizeBoard(key, board) {
 
   return {
     id: board.id || key,
-    blocks: board.blocks.map((block, index) => ({
-      id: block.id || `block-${index + 1}`,
-      type: block.type || (index === 0 ? "heading" : "bullet"),
-      text: String(block.text || ""),
-      marks: Array.isArray(block.marks) ? block.marks : []
-    })),
+    blocks: board.blocks.map((block, index) => normalizeBlock(block, index)),
     links: Array.isArray(board.links) ? board.links : []
   };
 }
 
-function getBoardText(key) {
+function getBoardBlocks(key) {
   const board = normalizeBoard(key, state.boards[key]);
-  return board.blocks.map((block) => block.text).join("\n");
+  return board.blocks;
+}
+
+function getBoardText(key) {
+  return getBoardBlocks(key).map((block) => block.text).join("\n");
+}
+
+function getBoardBlockCount(key) {
+  return Math.max(1, getBoardBlocks(key).length);
 }
 
 function setBoardText(key, text) {
@@ -528,6 +617,18 @@ function setBoardText(key, text) {
   const nextBoard = createBoardFromText(key, text);
   nextBoard.links = previousBoard.links;
   state.boards[key] = nextBoard;
+}
+
+function setBoardBlocks(key, blocks) {
+  const previousBoard = normalizeBoard(key, state.boards[key]);
+  const safeBlocks = Array.isArray(blocks) && blocks.length > 0
+    ? blocks.map((block, index) => normalizeBlock(block, index))
+    : createTextBlocks("");
+  state.boards[key] = {
+    id: previousBoard.id || key,
+    blocks: safeBlocks,
+    links: previousBoard.links
+  };
 }
 
 function getBoardLines(key) {
@@ -569,7 +670,8 @@ function buildCells() {
     for (let y = 0; y < state.dimensions.height; y += 1) {
       for (let x = 0; x < state.dimensions.width; x += 1) {
         const index = getBoardIndex(x, y, z);
-        const lines = getBoardLines(getBoardKey(x, y, z));
+        const blocks = getBoardBlocks(getBoardKey(x, y, z));
+        const lines = blocks.map((block) => block.text);
         const title = lines[0] || `板子 ${String(index + 1).padStart(2, "0")}`;
         const points = lines.slice(1);
 
@@ -580,7 +682,8 @@ function buildCells() {
           content: {
             title,
             type: "板子",
-            points
+            points,
+            blocks
           },
           opacity: 1,
           links: []
@@ -608,23 +711,29 @@ function buildCells() {
 function getGlobalNoteRowCount() {
   return Math.max(
     1,
-    ...cells.map((cell) => getBoardLineCount(getBoardKeyFromCoord(cell.coord)))
+    ...cells.map((cell) => getBoardBlockCount(getBoardKeyFromCoord(cell.coord)))
   );
 }
 
 function getNoteRowCount(cell) {
   if (viewState.rowRule === ROW_RULES.LOCAL) {
-    return getBoardLineCount(getBoardKeyFromCoord(cell.coord));
+    return getBoardBlockCount(getBoardKeyFromCoord(cell.coord));
   }
 
   return getGlobalNoteRowCount();
 }
 
-function getNoteRows(cell) {
-  const rows = [cell.content.title, ...cell.content.points];
+function getNoteBlocks(cell) {
+  const rows = cell.content.blocks.map((block, index) => normalizeBlock(block, index));
   const rowCount = getNoteRowCount(cell);
   while (rows.length < rowCount) {
-    rows.push("");
+    rows.push({
+      id: `empty-${rows.length + 1}`,
+      type: BLOCK_TYPES.PARAGRAPH,
+      indent: 0,
+      text: "",
+      marks: []
+    });
   }
   return rows.slice(0, rowCount);
 }
@@ -632,6 +741,336 @@ function getNoteRows(cell) {
 function getFullText(cell) {
   const detail = [cell.content.title, ...cell.content.points].filter(Boolean).join(" / ");
   return `${cell.label}: ${detail}`;
+}
+
+function appendMarkedText(parent, block) {
+  if (!block.text) {
+    return;
+  }
+
+  let cursor = 0;
+  const sortedMarks = [...block.marks].sort((first, second) => first.start - second.start || first.end - second.end);
+  sortedMarks.forEach((mark) => {
+    if (mark.start > cursor) {
+      parent.appendChild(document.createTextNode(block.text.slice(cursor, mark.start)));
+    }
+
+    const element = document.createElement(mark.type === "superscript" ? "sup" : "sub");
+    element.textContent = block.text.slice(mark.start, mark.end);
+    parent.appendChild(element);
+    cursor = Math.max(cursor, mark.end);
+  });
+
+  if (cursor < block.text.length) {
+    parent.appendChild(document.createTextNode(block.text.slice(cursor)));
+  }
+}
+
+function renderBlockContent(parent, block) {
+  parent.textContent = "";
+  appendMarkedText(parent, block);
+  if (!block.text) {
+    parent.appendChild(document.createElement("br"));
+  }
+}
+
+function createEditorBlock(block, index) {
+  const element = document.createElement("div");
+  element.className = "editor-block";
+  element.contentEditable = "true";
+  element.dataset.type = block.type;
+  element.dataset.indent = String(block.indent);
+  if (block.listStyle) {
+    element.dataset.listStyle = block.listStyle;
+  }
+  element.dataset.blockId = block.id || `block-${index + 1}`;
+  element.spellcheck = false;
+  renderBlockContent(element, block);
+  return element;
+}
+
+function createEditorBlocks(blocks) {
+  const fragment = document.createDocumentFragment();
+  blocks.forEach((block, index) => {
+    fragment.appendChild(createEditorBlock(block, index));
+  });
+  return fragment;
+}
+
+function getEditorBlockFromEventTarget(target) {
+  return target?.closest?.(".editor-block") || null;
+}
+
+function getActiveEditorBlock(editor) {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    return editor.querySelector(".editor-block");
+  }
+
+  const node = selection.anchorNode?.nodeType === Node.TEXT_NODE
+    ? selection.anchorNode.parentElement
+    : selection.anchorNode;
+  return node?.closest?.(".editor-block") || editor.querySelector(".editor-block");
+}
+
+function placeCaretAtEnd(element) {
+  element.focus();
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  range.collapse(false);
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function getTextAndMarksFromEditorBlock(element) {
+  let text = "";
+  const marks = [];
+
+  function walk(node, activeMark = null) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const start = text.length;
+      text += node.nodeValue || "";
+      const end = text.length;
+      if (activeMark && end > start) {
+        marks.push({ type: activeMark, start, end });
+      }
+      return;
+    }
+
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      return;
+    }
+
+    const tagName = node.tagName.toLowerCase();
+    const nextMark = tagName === "sup" ? "superscript" : tagName === "sub" ? "subscript" : activeMark;
+    node.childNodes.forEach((child) => walk(child, nextMark));
+  }
+
+  element.childNodes.forEach((child) => walk(child));
+  return { text, marks };
+}
+
+function getEditorBlocks(editor) {
+  return [...editor.querySelectorAll(".editor-block")].map((element, index) => {
+    const { text, marks } = getTextAndMarksFromEditorBlock(element);
+    const type = normalizeBlockType(element.dataset.type, index);
+    const indent = clamp(Number.parseInt(element.dataset.indent, 10) || 0, INDENT_MIN, INDENT_MAX);
+    const block = {
+      id: element.dataset.blockId || `block-${index + 1}`,
+      type,
+      indent,
+      text: text.trim(),
+      marks
+    };
+
+    if (isListBlockType(type)) {
+      block.listStyle = normalizeListStyle(type, element.dataset.listStyle, indent);
+    }
+
+    return block;
+  });
+}
+
+function updateEditorStateFromDom(editor, key) {
+  updateEditorMarkers(editor);
+  setBoardBlocks(key, getEditorBlocks(editor));
+  syncEditingRows();
+}
+
+function setActiveBlockType(editor, type, listStyle = null) {
+  const block = getActiveEditorBlock(editor);
+  if (!block) {
+    return;
+  }
+
+  block.dataset.type = type;
+  if (isListBlockType(type)) {
+    block.dataset.listStyle = normalizeListStyle(type, listStyle || block.dataset.listStyle, Number.parseInt(block.dataset.indent, 10) || 0);
+  } else {
+    delete block.dataset.listStyle;
+  }
+  updateEditorStateFromDom(editor, editingState.key);
+}
+
+function shiftActiveBlockIndent(editor, delta) {
+  const block = getActiveEditorBlock(editor);
+  if (!block) {
+    return;
+  }
+
+  const current = Number.parseInt(block.dataset.indent, 10) || 0;
+  const nextIndent = clamp(current + delta, INDENT_MIN, INDENT_MAX);
+  block.dataset.indent = String(nextIndent);
+  if (isListBlockType(block.dataset.type)) {
+    block.dataset.listStyle = getDefaultListStyle(block.dataset.type, nextIndent);
+  }
+  updateEditorStateFromDom(editor, editingState.key);
+}
+
+function runFormatAction(action, listStyle = null) {
+  if (!editingState) {
+    return;
+  }
+
+  const { editor, key } = editingState;
+  getActiveEditorBlock(editor)?.focus();
+
+  if (action === "superscript" || action === "subscript") {
+    document.execCommand(action);
+  } else if (action === "heading") {
+    setActiveBlockType(editor, BLOCK_TYPES.HEADING);
+  } else if (action === "paragraph") {
+    setActiveBlockType(editor, BLOCK_TYPES.PARAGRAPH);
+  } else if (action === "bullet") {
+    setActiveBlockType(editor, BLOCK_TYPES.BULLET, listStyle);
+  } else if (action === "numbered") {
+    setActiveBlockType(editor, BLOCK_TYPES.NUMBERED, listStyle);
+  } else if (action === "outdent") {
+    shiftActiveBlockIndent(editor, -1);
+  } else if (action === "indent") {
+    shiftActiveBlockIndent(editor, 1);
+  }
+
+  updateEditorStateFromDom(editor, key);
+  updateFormatToolbarState();
+}
+
+function wireFormatToolbar(toolbar) {
+  if (!toolbar) {
+    return;
+  }
+
+  ["pointerdown", "pointerup", "click", "dblclick", "mousedown", "mouseup"].forEach((eventName) => {
+    toolbar.addEventListener(eventName, (event) => event.stopPropagation());
+  });
+
+  toolbar.querySelectorAll("[data-format-action]").forEach((button) => {
+    button.addEventListener("pointerdown", (event) => event.preventDefault());
+    button.addEventListener("click", () => runFormatAction(button.dataset.formatAction, button.dataset.listStyle || null));
+  });
+}
+
+function createFloatingFormatToolbar() {
+  const toolbar = topFormatToolbar.cloneNode(true);
+  toolbar.id = "";
+  toolbar.classList.remove("top-format-toolbar");
+  toolbar.classList.add("floating-format-toolbar");
+  wireFormatToolbar(toolbar);
+  return toolbar;
+}
+
+function updateFormatToolbarState() {
+  const disabled = !editingState;
+  document.querySelectorAll(".text-format-toolbar [data-format-action]").forEach((button) => {
+    button.disabled = disabled;
+  });
+}
+
+function insertEditorBlockAfter(editor, currentBlock) {
+  const blocks = [...editor.querySelectorAll(".editor-block")];
+  const index = blocks.indexOf(currentBlock);
+  const nextBlock = createEditorBlock({
+    id: `block-${Date.now()}`,
+    type: currentBlock?.dataset.type || BLOCK_TYPES.BULLET,
+    indent: Number.parseInt(currentBlock?.dataset.indent, 10) || 0,
+    listStyle: currentBlock?.dataset.listStyle || null,
+    text: "",
+    marks: []
+  }, index + 1);
+
+  currentBlock.after(nextBlock);
+  updateEditorStateFromDom(editor, editingState.key);
+  placeCaretAtEnd(nextBlock);
+}
+
+function getBulletMarker(listStyle) {
+  return {
+    disc: "•",
+    circle: "○",
+    diamond: "◆"
+  }[listStyle] || "•";
+}
+
+function toAlphaNumber(value) {
+  let current = value;
+  let result = "";
+  while (current > 0) {
+    current -= 1;
+    result = String.fromCharCode(97 + (current % 26)) + result;
+    current = Math.floor(current / 26);
+  }
+  return result || "a";
+}
+
+function toRomanNumber(value) {
+  const romanMap = [
+    [10, "x"],
+    [9, "ix"],
+    [5, "v"],
+    [4, "iv"],
+    [1, "i"]
+  ];
+  let current = value;
+  let result = "";
+  romanMap.forEach(([amount, symbol]) => {
+    while (current >= amount) {
+      result += symbol;
+      current -= amount;
+    }
+  });
+  return result || "i";
+}
+
+function getNumberMarker(value, listStyle) {
+  if (listStyle === "lower-alpha") {
+    return `${toAlphaNumber(value)}.`;
+  }
+
+  if (listStyle === "lower-roman") {
+    return `${toRomanNumber(value)}.`;
+  }
+
+  return `${value}.`;
+}
+
+function applyListMarkerData(element, block, numberCounters = null) {
+  element.dataset.type = block.type;
+  element.dataset.indent = String(block.indent);
+  delete element.dataset.marker;
+  delete element.dataset.listStyle;
+
+  if (block.type === BLOCK_TYPES.NUMBERED) {
+    const listStyle = normalizeListStyle(block.type, block.listStyle, block.indent);
+    if (numberCounters) {
+      numberCounters[block.indent] += 1;
+      numberCounters.fill(0, block.indent + 1);
+      element.dataset.marker = getNumberMarker(numberCounters[block.indent], listStyle);
+    } else {
+      element.dataset.marker = getNumberMarker(1, listStyle);
+    }
+    element.dataset.listStyle = listStyle;
+  } else if (block.type === BLOCK_TYPES.BULLET) {
+    const listStyle = normalizeListStyle(block.type, block.listStyle, block.indent);
+    if (numberCounters) {
+      numberCounters.fill(0, block.indent);
+    }
+    element.dataset.marker = getBulletMarker(listStyle);
+    element.dataset.listStyle = listStyle;
+  }
+}
+
+function updateEditorMarkers(editor) {
+  const numberCounters = Array.from({ length: INDENT_MAX + 1 }, () => 0);
+  editor.querySelectorAll(".editor-block").forEach((element, index) => {
+    const type = normalizeBlockType(element.dataset.type, index);
+    const indent = clamp(Number.parseInt(element.dataset.indent, 10) || 0, INDENT_MIN, INDENT_MAX);
+    applyListMarkerData(element, {
+      type,
+      indent,
+      listStyle: element.dataset.listStyle
+    }, numberCounters);
+  });
 }
 
 function selectCell(cell) {
@@ -656,7 +1095,7 @@ function syncEditingRows() {
     return;
   }
 
-  const activeCount = getTextLineCount(editingState.textarea.value);
+  const activeCount = getEditorBlocks(editingState.editor).length;
   const rowCount = viewState.rowRule === ROW_RULES.LOCAL
     ? activeCount
     : Math.max(getGlobalNoteRowCount(), activeCount);
@@ -680,11 +1119,13 @@ function stopEditing({ commit }) {
     return;
   }
 
-  const { cellId, key, originalText, textarea, beforeSnapshot } = editingState;
-  const nextText = commit ? textarea.value : originalText;
-  setBoardText(key, nextText);
-  textarea.remove();
+  const { cellId, key, originalBlocks, editor, floatingToolbar, beforeSnapshot } = editingState;
+  const nextBlocks = commit ? getEditorBlocks(editor) : originalBlocks;
+  setBoardBlocks(key, nextBlocks);
+  editor.remove();
+  floatingToolbar.remove();
   editingState = null;
+  updateFormatToolbarState();
   viewState.selectedId = cellId;
   renderCells();
   renderConfig();
@@ -709,16 +1150,21 @@ function beginEditing(cell, note) {
   }
 
   const key = getBoardKeyFromCoord(cell.coord);
-  const originalText = getBoardText(key);
+  const originalBlocks = cloneData(getBoardBlocks(key));
   viewState.selectedId = cell.id;
   updateAllCellStates();
   note.classList.add("is-editing");
 
-  const editor = document.createElement("textarea");
-  editor.className = "note-editor note-editor-overlay";
-  editor.value = originalText;
-  editor.spellcheck = false;
+  const editor = document.createElement("div");
+  editor.className = "note-editor note-editor-overlay rich-note-editor";
   editor.setAttribute("aria-label", `${cell.label} 文本编辑`);
+
+  const blockList = document.createElement("div");
+  blockList.className = "rich-editor-blocks";
+  blockList.appendChild(createEditorBlocks(originalBlocks));
+  editor.appendChild(blockList);
+  updateEditorMarkers(editor);
+  const floatingToolbar = createFloatingFormatToolbar();
 
   ["pointerdown", "pointerup", "click", "dblclick", "mousedown", "mouseup"].forEach((eventName) => {
     editor.addEventListener(eventName, (event) => {
@@ -726,8 +1172,7 @@ function beginEditing(cell, note) {
     });
   });
   editor.addEventListener("input", () => {
-    setBoardText(key, editor.value);
-    syncEditingRows();
+    updateEditorStateFromDom(editor, key);
   });
   editor.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
@@ -737,7 +1182,7 @@ function beginEditing(cell, note) {
       return;
     }
 
-    if (event.key === "Enter" && !event.shiftKey && !event.altKey) {
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
       event.stopPropagation();
       stopEditing({ commit: true });
@@ -745,24 +1190,53 @@ function beginEditing(cell, note) {
     }
 
     if (event.key === "Enter") {
-      window.setTimeout(syncEditingRows, 0);
+      const block = getEditorBlockFromEventTarget(event.target);
+      if (block) {
+        event.preventDefault();
+        event.stopPropagation();
+        insertEditorBlockAfter(editor, block);
+      }
+      return;
+    }
+
+    if (event.key === "Tab") {
+      event.preventDefault();
+      event.stopPropagation();
+      shiftActiveBlockIndent(editor, event.shiftKey ? -1 : 1);
+      return;
+    }
+
+    const keyName = event.key.toLowerCase();
+    if ((event.ctrlKey || event.metaKey) && keyName === ".") {
+      event.preventDefault();
+      document.execCommand("superscript");
+      updateEditorStateFromDom(editor, key);
+      return;
+    }
+
+    if ((event.ctrlKey || event.metaKey) && keyName === ",") {
+      event.preventDefault();
+      document.execCommand("subscript");
+      updateEditorStateFromDom(editor, key);
     }
   });
 
   document.body.appendChild(editor);
+  document.body.appendChild(floatingToolbar);
   editingState = {
     cellId: cell.id,
     key,
-    originalText,
-    textarea: editor,
+    originalBlocks,
+    editor,
+    floatingToolbar,
     note,
     noteRect: null,
     beforeSnapshot: createHistorySnapshot()
   };
+  updateFormatToolbarState();
   syncEditingRows();
   updateEditingOverlayBounds();
-  editor.focus();
-  editor.setSelectionRange(editor.value.length, editor.value.length);
+  placeCaretAtEnd(editor.querySelector(".editor-block"));
 }
 
 function toPixels(value) {
@@ -782,8 +1256,8 @@ function updateEditingOverlayBounds() {
     return;
   }
 
-  const { note, textarea } = editingState;
-  if (!note.isConnected || !textarea.isConnected) {
+  const { note, editor, floatingToolbar } = editingState;
+  if (!note.isConnected || !editor.isConnected) {
     return;
   }
 
@@ -801,15 +1275,20 @@ function updateEditingOverlayBounds() {
     bottom: rect.bottom
   };
 
-  textarea.style.left = `${rect.left}px`;
-  textarea.style.top = `${rect.top}px`;
-  textarea.style.width = `${rect.width}px`;
-  textarea.style.height = `${rect.height}px`;
-  textarea.style.padding = scaleBoxValue(noteStyle.padding, visualScale);
-  textarea.style.borderRadius = noteStyle.borderRadius;
-  textarea.style.fontSize = `${fontSize}px`;
-  textarea.style.fontWeight = lineStyle.fontWeight;
-  textarea.style.lineHeight = `${lineHeight}px`;
+  editor.style.left = `${rect.left}px`;
+  editor.style.top = `${rect.top}px`;
+  editor.style.width = `${rect.width}px`;
+  editor.style.height = `${rect.height}px`;
+  editor.style.padding = scaleBoxValue(noteStyle.padding, visualScale);
+  editor.style.borderRadius = noteStyle.borderRadius;
+  editor.style.fontSize = `${fontSize}px`;
+  editor.style.fontWeight = lineStyle.fontWeight;
+  editor.style.lineHeight = `${lineHeight}px`;
+
+  if (floatingToolbar?.isConnected) {
+    floatingToolbar.style.left = `${Math.max(8, rect.left)}px`;
+    floatingToolbar.style.top = `${Math.max(8, rect.top - floatingToolbar.offsetHeight - 8)}px`;
+  }
 }
 
 function isPointInsideElement(event, element) {
@@ -926,12 +1405,14 @@ function renderCell(cell) {
   const rowList = document.createElement("ul");
   rowList.className = "note-lines";
 
-  getNoteRows(cell).forEach((line, index) => {
+  const numberCounters = Array.from({ length: INDENT_MAX + 1 }, () => 0);
+  getNoteBlocks(cell).forEach((block, index) => {
     const item = document.createElement("li");
     item.className = "note-line";
-    item.textContent = line;
-    item.title = line;
-    item.dataset.empty = line ? "false" : "true";
+    applyListMarkerData(item, block, numberCounters);
+    renderBlockContent(item, block);
+    item.title = block.text;
+    item.dataset.empty = block.text ? "false" : "true";
     item.dataset.row = String(index + 1);
     rowList.appendChild(item);
   });
@@ -1388,6 +1869,9 @@ function resetView() {
   applyViewTransform();
 }
 
+wireFormatToolbar(topFormatToolbar);
+updateFormatToolbarState();
+
 scene.addEventListener("pointerdown", handlePointerDown);
 scene.addEventListener("pointermove", handlePointerMove);
 scene.addEventListener("pointerup", handlePointerUp);
@@ -1395,7 +1879,8 @@ scene.addEventListener("pointercancel", handlePointerUp);
 scene.addEventListener("wheel", handleWheel, { passive: false });
 window.addEventListener("resize", updateEditingOverlayBounds);
 window.addEventListener("beforeunload", (event) => {
-  const hasUncommittedEdit = editingState && editingState.textarea.value !== editingState.originalText;
+  const hasUncommittedEdit = editingState
+    && !areSnapshotsEqual(editingState.originalBlocks, getEditorBlocks(editingState.editor));
   if (!saveState.isDirty && !hasUncommittedEdit) {
     return;
   }
@@ -1508,8 +1993,8 @@ document.addEventListener("click", (event) => {
       && event.clientY >= rect.top
       && event.clientY <= rect.bottom;
 
-    if (editingState.textarea.contains(event.target) || isInsideNote) {
-      editingState.textarea.focus();
+    if (editingState.editor.contains(event.target) || isInsideNote) {
+      getActiveEditorBlock(editingState.editor)?.focus();
       return;
     }
 

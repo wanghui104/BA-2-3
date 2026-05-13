@@ -117,6 +117,110 @@ button {
   color: #b42318;
 }
 
+.text-format-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px;
+  border: 1px solid rgba(28, 36, 48, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 12px 26px rgba(38, 47, 64, 0.12);
+  backdrop-filter: blur(10px);
+}
+
+.top-format-toolbar {
+  position: fixed;
+  left: 16px;
+  top: 60px;
+  z-index: 12;
+}
+
+.floating-format-toolbar {
+  position: fixed;
+  z-index: 42;
+}
+
+.text-format-toolbar button {
+  min-width: 27px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(28, 36, 48, 0.14);
+  border-radius: 5px;
+  background: #ffffff;
+  color: #263241;
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.text-format-toolbar button:hover:not(:disabled),
+.text-format-toolbar button:focus-visible {
+  border-color: rgba(42, 157, 143, 0.72);
+  outline: 0;
+}
+
+.text-format-toolbar button:disabled {
+  color: rgba(52, 64, 84, 0.34);
+  background: rgba(255, 255, 255, 0.56);
+  cursor: not-allowed;
+}
+
+.format-menu {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.format-menu > button:first-child {
+  border-radius: 5px 0 0 5px;
+}
+
+.format-menu-toggle {
+  min-width: 18px !important;
+  width: 18px;
+  border-left: 0 !important;
+  border-radius: 0 5px 5px 0 !important;
+  padding: 0 !important;
+  font-size: 10px !important;
+}
+
+.format-popover {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  z-index: 50;
+  display: none;
+  grid-template-columns: repeat(3, 31px);
+  gap: 5px;
+  padding: 7px;
+  border: 1px solid rgba(28, 36, 48, 0.16);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 16px 34px rgba(38, 47, 64, 0.18);
+}
+
+.format-menu:hover .format-popover,
+.format-menu:focus-within .format-popover {
+  display: grid;
+}
+
+.format-popover button {
+  width: 31px;
+  height: 29px;
+  font-size: 13px;
+}
+
+.format-divider {
+  width: 1px;
+  height: 20px;
+  margin: 0 2px;
+  background: rgba(28, 36, 48, 0.12);
+}
+
 .page {
   min-height: 100vh;
 }
@@ -363,6 +467,56 @@ button {
   pointer-events: auto;
 }
 
+.rich-note-editor {
+  overflow: visible;
+}
+
+.rich-editor-blocks {
+  display: grid;
+  grid-auto-rows: var(--note-line);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.editor-block {
+  --indent: 0;
+  min-width: 0;
+  padding-left: calc(var(--indent, 0) * 10px);
+  outline: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-block[data-indent="1"] { --indent: 1; }
+.editor-block[data-indent="2"] { --indent: 2; }
+.editor-block[data-indent="3"] { --indent: 3; }
+.editor-block[data-indent="4"] { --indent: 4; }
+
+.editor-block[data-type="bullet"]::before,
+.editor-block[data-type="numbered"]::before {
+  display: inline-block;
+  width: 10px;
+  margin-right: 3px;
+  color: #5a6678;
+  font-weight: 800;
+}
+
+.editor-block[data-type="bullet"]::before {
+  content: attr(data-marker);
+}
+
+.editor-block[data-type="numbered"]::before {
+  content: attr(data-marker);
+  width: 14px;
+}
+
+.editor-block[data-list-style="circle"]::before,
+.note-line[data-list-style="circle"]::before {
+  font-size: 0.40em;
+}
+
 .note-editor-overlay {
   position: fixed;
   inset: auto;
@@ -384,7 +538,9 @@ button {
 }
 
 .note-line {
+  --indent: 0;
   min-width: 0;
+  padding-left: calc(var(--indent, 0) * 10px);
   color: #344054;
   font-size: var(--note-font);
   font-weight: 650;
@@ -392,6 +548,43 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.note-line[data-indent="1"] { --indent: 1; }
+.note-line[data-indent="2"] { --indent: 2; }
+.note-line[data-indent="3"] { --indent: 3; }
+.note-line[data-indent="4"] { --indent: 4; }
+
+.note-line[data-type="bullet"]::before,
+.note-line[data-type="numbered"]::before {
+  display: inline-block;
+  width: 10px;
+  margin-right: 3px;
+  color: #5a6678;
+  font-weight: 800;
+}
+
+.note-line[data-type="bullet"]::before {
+  content: attr(data-marker);
+}
+
+.note-line[data-type="numbered"]::before {
+  content: attr(data-marker);
+  width: 14px;
+}
+
+.note-line sup,
+.editor-block sup {
+  font-size: 0.68em;
+  line-height: 0;
+  vertical-align: super;
+}
+
+.note-line sub,
+.editor-block sub {
+  font-size: 0.68em;
+  line-height: 0;
+  vertical-align: sub;
 }
 
 .note-line:first-child {
