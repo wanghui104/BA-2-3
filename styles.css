@@ -35,7 +35,7 @@ button {
   font: inherit;
 }
 
-.page-tabs {
+.history-toolbar {
   position: fixed;
   left: 16px;
   top: 14px;
@@ -50,22 +50,71 @@ button {
   backdrop-filter: blur(10px);
 }
 
-.tab-button {
-  min-width: 72px;
-  min-height: 32px;
+.history-button {
+  width: 34px;
+  height: 32px;
+  display: grid;
+  place-items: center;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: #344054;
-  font-size: 13px;
-  font-weight: 800;
+  font-size: 21px;
+  font-weight: 850;
+  line-height: 1;
   cursor: pointer;
 }
 
-.tab-button:hover,
-.tab-button.is-active {
+.history-button:hover:not(:disabled),
+.history-button:focus-visible {
   background: #1c2430;
   color: #ffffff;
+}
+
+.history-button:disabled {
+  color: rgba(52, 64, 84, 0.3);
+  cursor: not-allowed;
+}
+
+.save-button {
+  min-width: 48px;
+  height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: #1c2430;
+  color: #ffffff;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.save-button:hover,
+.save-button:focus-visible {
+  background: #357ded;
+}
+
+.save-button:disabled {
+  background: rgba(28, 36, 48, 0.35);
+  cursor: wait;
+}
+
+.save-status {
+  min-width: 46px;
+  display: flex;
+  align-items: center;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.save-status.is-dirty {
+  color: #b54708;
+}
+
+.save-status.is-error {
+  color: #b42318;
 }
 
 .page {
@@ -924,11 +973,6 @@ button {
 }
 
 @media (max-width: 760px) {
-  .page-tabs {
-    left: 10px;
-    top: 10px;
-  }
-
   .model-stage {
     width: 620px;
     height: 520px;

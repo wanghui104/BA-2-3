@@ -8,10 +8,12 @@
   </head>
   <body>
     <main class="app-shell">
-      <nav class="page-tabs" aria-label="页面">
-        <button type="button" class="tab-button is-active" data-page-target="previewPage">预览</button>
-        <button type="button" class="tab-button" data-page-target="configPage">配置</button>
-      </nav>
+      <div class="history-toolbar" aria-label="历史操作">
+        <button type="button" class="history-button" id="undoButton" aria-label="退一步" title="退一步 Ctrl+Z" disabled>↶</button>
+        <button type="button" class="history-button" id="redoButton" aria-label="进一步" title="进一步 Ctrl+Y" disabled>↷</button>
+        <button type="button" class="save-button" id="saveButton" title="保存 Ctrl+S">保存</button>
+        <span class="save-status" id="saveStatus" aria-live="polite">未保存</span>
+      </div>
 
       <section class="page page-preview is-active" id="previewPage" aria-label="结构预览">
         <section class="workspace" aria-label="interactive knowledge cuboid">
@@ -90,20 +92,6 @@
         </section>
       </section>
 
-      <section class="page page-config" id="configPage" aria-label="结构配置" hidden>
-        <div class="config-shell">
-          <section class="config-section board-section" aria-labelledby="boardTitle">
-            <div class="board-heading">
-              <div>
-                <h2 id="boardTitle">板子内容配置</h2>
-                <p>每个输入框对应长方体中的一个具体位置，可输入多行文字。</p>
-              </div>
-              <button type="button" id="fillDefaultsButton">填入示例</button>
-            </div>
-            <div class="board-editor-grid" id="boardEditorGrid"></div>
-          </section>
-        </div>
-      </section>
     </main>
 
     <script src="./app.js"></script>

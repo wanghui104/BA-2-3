@@ -23,6 +23,8 @@ const CELL_SIZE_LIMITS = {
 const TEXT_SIZE_MIN = 2;
 const TEXT_SIZE_MAX = 24;
 const GAP_MIN = gridSpec.gap;
+const HISTORY_LIMIT = 10;
+const SAVE_ENDPOINT = "/api/state";
 const ROW_RULES = {
   GLOBAL_MAX: "global-max",
   LOCAL: "local"
@@ -54,7 +56,7 @@ const state = {
     heights: Array.from({ length: gridSpec.height }, () => gridSpec.cellSize.height),
     depths: Array.from({ length: gridSpec.depth }, () => gridSpec.cellSize.depth)
   },
-  boardTexts: {}
+  boards: {}
 };
 
 let cells = [];
@@ -78,10 +80,10 @@ const widthInput = document.querySelector("#widthInput");
 const heightInput = document.querySelector("#heightInput");
 const depthInput = document.querySelector("#depthInput");
 const structureReadout = document.querySelector("#structureReadout");
-const boardEditorGrid = document.querySelector("#boardEditorGrid");
-const fillDefaultsButton = document.querySelector("#fillDefaultsButton");
-const tabButtons = document.querySelectorAll(".tab-button");
-const pages = document.querySelectorAll(".page");
+const undoButton = document.querySelector("#undoButton");
+const redoButton = document.querySelector("#redoButton");
+const saveButton = document.querySelector("#saveButton");
+const saveStatus = document.querySelector("#saveStatus");
 
 const viewState = {
   rotationX: -18,
@@ -98,6 +100,22 @@ const viewState = {
   lastX: 0,
   lastY: 0
 };
+
+const historyState = {
+  undoStack: [],
+  redoStack: [],
+  isRestoring: false
+};
+
+const saveState = {
+  isDirty: false,
+  isSaving: false,
+  lastSavedAt: null,
+  loadError: null
+};
+
+let spacingChangeSnapshot = null;
+let textSizeChangeSnapshot = null;
 
 function getBoardKey(x, y, z) {
   return `${x}-${y}-${z}`;
@@ -117,6 +135,243 @@ function getDefaultText(index) {
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
+}
+
+function cloneData(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function createHistorySnapshot() {
+  return {
+    dimensions: cloneData(state.dimensions),
+    sliceSizes: cloneData(state.sliceSizes),
+    boards: cloneData(state.boards),
+    view: {
+      gap: viewState.gap,
+      rowRule: viewState.rowRule,
+      detailPreview: viewState.detailPreview,
+      markersVisible: viewState.markersVisible,
+      textSize: viewState.textSize
+    }
+  };
+}
+
+function areSnapshotsEqual(first, second) {
+  return JSON.stringify(first) === JSON.stringify(second);
+}
+
+function updateHistoryButtons() {
+  undoButton.disabled = historyState.undoStack.length === 0;
+  redoButton.disabled = historyState.redoStack.length === 0;
+}
+
+function updateSaveStatus({ variant = null, message = null } = {}) {
+  saveButton.disabled = saveState.isSaving;
+  saveStatus.classList.toggle("is-dirty", saveState.isDirty && variant !== "error");
+  saveStatus.classList.toggle("is-error", variant === "error");
+
+  if (message) {
+    saveStatus.textContent = message;
+    return;
+  }
+
+  if (saveState.isSaving) {
+    saveStatus.textContent = "保存中";
+    return;
+  }
+
+  saveStatus.textContent = saveState.isDirty ? "未保存" : "已保存";
+}
+
+function markDirty() {
+  saveState.isDirty = true;
+  updateSaveStatus();
+}
+
+function commitHistorySnapshot(beforeSnapshot) {
+  if (historyState.isRestoring || !beforeSnapshot) {
+    return;
+  }
+
+  const afterSnapshot = createHistorySnapshot();
+  if (areSnapshotsEqual(beforeSnapshot, afterSnapshot)) {
+    updateHistoryButtons();
+    return;
+  }
+
+  historyState.undoStack.push(beforeSnapshot);
+  if (historyState.undoStack.length > HISTORY_LIMIT) {
+    historyState.undoStack.shift();
+  }
+  historyState.redoStack = [];
+  updateHistoryButtons();
+  markDirty();
+}
+
+function applyHistorySnapshot(snapshot) {
+  historyState.isRestoring = true;
+  state.dimensions = cloneData(snapshot.dimensions);
+  state.sliceSizes = cloneData(snapshot.sliceSizes);
+  state.boards = cloneData(snapshot.boards);
+  gridSpec.width = state.dimensions.width;
+  gridSpec.height = state.dimensions.height;
+  gridSpec.depth = state.dimensions.depth;
+  viewState.gap = snapshot.view.gap;
+  viewState.rowRule = snapshot.view.rowRule;
+  viewState.detailPreview = snapshot.view.detailPreview;
+  viewState.markersVisible = snapshot.view.markersVisible;
+  viewState.textSize = snapshot.view.textSize;
+  viewState.selectedId = null;
+
+  rowRuleSelect.value = viewState.rowRule;
+  detailPreviewSelect.value = viewState.detailPreview ? "on" : "off";
+  markerVisibilitySelect.value = viewState.markersVisible ? "on" : "off";
+  updateShapeControls();
+  renderCells();
+  renderConfig();
+  selectionText.textContent = "尚未选择。";
+  historyState.isRestoring = false;
+  updateHistoryButtons();
+}
+
+function undoHistoryStep() {
+  if (editingState) {
+    stopEditing({ commit: true });
+  }
+
+  if (historyState.undoStack.length === 0) {
+    return;
+  }
+
+  const currentSnapshot = createHistorySnapshot();
+  const previousSnapshot = historyState.undoStack.pop();
+  historyState.redoStack.push(currentSnapshot);
+  applyHistorySnapshot(previousSnapshot);
+  markDirty();
+}
+
+function redoHistoryStep() {
+  if (editingState) {
+    stopEditing({ commit: true });
+  }
+
+  if (historyState.redoStack.length === 0) {
+    return;
+  }
+
+  const currentSnapshot = createHistorySnapshot();
+  const nextSnapshot = historyState.redoStack.pop();
+  historyState.undoStack.push(currentSnapshot);
+  if (historyState.undoStack.length > HISTORY_LIMIT) {
+    historyState.undoStack.shift();
+  }
+  applyHistorySnapshot(nextSnapshot);
+  markDirty();
+}
+
+function createPersistedState() {
+  return {
+    schemaVersion: 1,
+    savedAt: new Date().toISOString(),
+    dimensions: cloneData(state.dimensions),
+    sliceSizes: cloneData(state.sliceSizes),
+    view: {
+      gap: viewState.gap,
+      rowRule: viewState.rowRule,
+      detailPreview: viewState.detailPreview,
+      markersVisible: viewState.markersVisible,
+      textSize: viewState.textSize
+    },
+    boards: cloneData(state.boards)
+  };
+}
+
+function applyPersistedState(payload) {
+  if (!payload) {
+    ensureBoards();
+    return;
+  }
+
+  state.dimensions = cloneData(payload.dimensions || state.dimensions);
+  state.sliceSizes = cloneData(payload.sliceSizes || state.sliceSizes);
+  state.boards = cloneData(payload.boards || {});
+
+  if (payload.boardTexts && !payload.boards) {
+    Object.entries(payload.boardTexts).forEach(([key, text]) => {
+      state.boards[key] = createBoardFromText(key, text);
+    });
+  }
+
+  gridSpec.width = state.dimensions.width;
+  gridSpec.height = state.dimensions.height;
+  gridSpec.depth = state.dimensions.depth;
+  syncSliceSizesToDimensions();
+
+  if (payload.view) {
+    viewState.gap = typeof payload.view.gap === "number" ? payload.view.gap : viewState.gap;
+    viewState.rowRule = payload.view.rowRule || viewState.rowRule;
+    viewState.detailPreview = Boolean(payload.view.detailPreview);
+    viewState.markersVisible = Boolean(payload.view.markersVisible);
+    viewState.textSize = typeof payload.view.textSize === "number" ? payload.view.textSize : viewState.textSize;
+  }
+
+  ensureBoards();
+}
+
+async function loadSavedState() {
+  try {
+    const response = await fetch(SAVE_ENDPOINT, { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error("Load request failed.");
+    }
+
+    const payload = await response.json();
+    applyPersistedState(payload);
+    saveState.isDirty = false;
+    saveState.loadError = null;
+  } catch (error) {
+    ensureBoards();
+    saveState.loadError = error;
+    saveState.isDirty = false;
+    updateSaveStatus({ variant: "error", message: "未连接保存" });
+    return;
+  }
+
+  updateSaveStatus();
+}
+
+async function saveBoardState() {
+  if (editingState) {
+    stopEditing({ commit: true });
+  }
+
+  saveState.isSaving = true;
+  updateSaveStatus();
+  let saved = false;
+
+  try {
+    const payload = createPersistedState();
+    const response = await fetch(SAVE_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      throw new Error("Save request failed.");
+    }
+
+    saveState.isDirty = false;
+    saveState.lastSavedAt = payload.savedAt;
+    saved = true;
+  } catch (error) {
+    saveState.isDirty = true;
+  } finally {
+    saveState.isSaving = false;
+    updateSaveStatus(saved ? { message: "已保存" } : { variant: "error", message: "保存失败" });
+  }
 }
 
 function getMaxGap() {
@@ -220,13 +475,78 @@ function getTextLineCount(text) {
   return Math.max(1, String(text || "").split(/\r?\n/).length);
 }
 
-function ensureBoardTexts({ reset = false } = {}) {
+function createTextBlocks(text) {
+  const lines = String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim());
+  const safeLines = lines.length > 0 ? lines : [""];
+
+  return safeLines.map((line, index) => ({
+    id: `block-${index + 1}`,
+    type: index === 0 ? "heading" : "bullet",
+    text: line,
+    marks: []
+  }));
+}
+
+function createBoardFromText(key, text) {
+  return {
+    id: key,
+    blocks: createTextBlocks(text),
+    links: []
+  };
+}
+
+function normalizeBoard(key, board) {
+  if (typeof board === "string") {
+    return createBoardFromText(key, board);
+  }
+
+  if (!board || !Array.isArray(board.blocks)) {
+    return createBoardFromText(key, "");
+  }
+
+  return {
+    id: board.id || key,
+    blocks: board.blocks.map((block, index) => ({
+      id: block.id || `block-${index + 1}`,
+      type: block.type || (index === 0 ? "heading" : "bullet"),
+      text: String(block.text || ""),
+      marks: Array.isArray(block.marks) ? block.marks : []
+    })),
+    links: Array.isArray(board.links) ? board.links : []
+  };
+}
+
+function getBoardText(key) {
+  const board = normalizeBoard(key, state.boards[key]);
+  return board.blocks.map((block) => block.text).join("\n");
+}
+
+function setBoardText(key, text) {
+  const previousBoard = normalizeBoard(key, state.boards[key]);
+  const nextBoard = createBoardFromText(key, text);
+  nextBoard.links = previousBoard.links;
+  state.boards[key] = nextBoard;
+}
+
+function getBoardLines(key) {
+  return getTextLines(getBoardText(key));
+}
+
+function getBoardLineCount(key) {
+  return getTextLineCount(getBoardText(key));
+}
+
+function ensureBoards({ reset = false } = {}) {
   for (let z = 0; z < state.dimensions.depth; z += 1) {
     for (let y = 0; y < state.dimensions.height; y += 1) {
       for (let x = 0; x < state.dimensions.width; x += 1) {
         const key = getBoardKey(x, y, z);
-        if (reset || typeof state.boardTexts[key] !== "string") {
-          state.boardTexts[key] = getDefaultText(getBoardIndex(x, y, z));
+        if (reset || !state.boards[key]) {
+          state.boards[key] = createBoardFromText(key, getDefaultText(getBoardIndex(x, y, z)));
+        } else {
+          state.boards[key] = normalizeBoard(key, state.boards[key]);
         }
       }
     }
@@ -242,14 +562,14 @@ function getCellById(cellId) {
 }
 
 function buildCells() {
-  ensureBoardTexts();
+  ensureBoards();
   const nextCells = [];
 
   for (let z = 0; z < state.dimensions.depth; z += 1) {
     for (let y = 0; y < state.dimensions.height; y += 1) {
       for (let x = 0; x < state.dimensions.width; x += 1) {
         const index = getBoardIndex(x, y, z);
-        const lines = getTextLines(state.boardTexts[getBoardKey(x, y, z)]);
+        const lines = getBoardLines(getBoardKey(x, y, z));
         const title = lines[0] || `板子 ${String(index + 1).padStart(2, "0")}`;
         const points = lines.slice(1);
 
@@ -288,13 +608,13 @@ function buildCells() {
 function getGlobalNoteRowCount() {
   return Math.max(
     1,
-    ...cells.map((cell) => getTextLineCount(state.boardTexts[getBoardKeyFromCoord(cell.coord)] || ""))
+    ...cells.map((cell) => getBoardLineCount(getBoardKeyFromCoord(cell.coord)))
   );
 }
 
 function getNoteRowCount(cell) {
   if (viewState.rowRule === ROW_RULES.LOCAL) {
-    return getTextLineCount(state.boardTexts[getBoardKeyFromCoord(cell.coord)] || "");
+    return getBoardLineCount(getBoardKeyFromCoord(cell.coord));
   }
 
   return getGlobalNoteRowCount();
@@ -360,9 +680,9 @@ function stopEditing({ commit }) {
     return;
   }
 
-  const { cellId, key, originalText, textarea } = editingState;
+  const { cellId, key, originalText, textarea, beforeSnapshot } = editingState;
   const nextText = commit ? textarea.value : originalText;
-  state.boardTexts[key] = nextText;
+  setBoardText(key, nextText);
   textarea.remove();
   editingState = null;
   viewState.selectedId = cellId;
@@ -372,6 +692,10 @@ function stopEditing({ commit }) {
   const cell = getCellById(cellId);
   if (cell) {
     selectCell(cell);
+  }
+
+  if (commit) {
+    commitHistorySnapshot(beforeSnapshot);
   }
 }
 
@@ -385,7 +709,7 @@ function beginEditing(cell, note) {
   }
 
   const key = getBoardKeyFromCoord(cell.coord);
-  const originalText = state.boardTexts[key] || "";
+  const originalText = getBoardText(key);
   viewState.selectedId = cell.id;
   updateAllCellStates();
   note.classList.add("is-editing");
@@ -402,7 +726,7 @@ function beginEditing(cell, note) {
     });
   });
   editor.addEventListener("input", () => {
-    state.boardTexts[key] = editor.value;
+    setBoardText(key, editor.value);
     syncEditingRows();
   });
   editor.addEventListener("keydown", (event) => {
@@ -426,7 +750,15 @@ function beginEditing(cell, note) {
   });
 
   document.body.appendChild(editor);
-  editingState = { cellId: cell.id, key, originalText, textarea: editor, note, noteRect: null };
+  editingState = {
+    cellId: cell.id,
+    key,
+    originalText,
+    textarea: editor,
+    note,
+    noteRect: null,
+    beforeSnapshot: createHistorySnapshot()
+  };
   syncEditingRows();
   updateEditingOverlayBounds();
   editor.focus();
@@ -750,6 +1082,7 @@ function createSliceControl({ axis, index, label, value, min, max, baseTransform
   field.dataset.axis = axis;
   field.dataset.index = String(index);
   field.dataset.baseTransform = baseTransform;
+  let beforeSnapshot = null;
 
   const input = document.createElement("input");
   input.type = "number";
@@ -765,15 +1098,28 @@ function createSliceControl({ axis, index, label, value, min, max, baseTransform
     });
   });
 
-  input.addEventListener("change", () => syncSliceControlInput(input));
-  input.addEventListener("blur", () => syncSliceControlInput(input));
+  const captureBeforeSnapshot = () => {
+    if (!beforeSnapshot) {
+      beforeSnapshot = createHistorySnapshot();
+    }
+  };
+  const commitSliceChange = () => {
+    syncSliceControlInput(input, beforeSnapshot);
+    beforeSnapshot = null;
+  };
+
+  input.addEventListener("focus", captureBeforeSnapshot);
+  input.addEventListener("pointerdown", captureBeforeSnapshot);
+  input.addEventListener("change", commitSliceChange);
+  input.addEventListener("blur", commitSliceChange);
   input.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") {
       return;
     }
 
     event.preventDefault();
-    syncSliceControlInput(input);
+    captureBeforeSnapshot();
+    commitSliceChange();
     input.blur();
   });
 
@@ -910,39 +1256,6 @@ function renderConfig() {
   heightInput.value = state.dimensions.height;
   depthInput.value = state.dimensions.depth;
   structureReadout.textContent = `当前共有 ${state.dimensions.depth} × ${state.dimensions.height} × ${state.dimensions.width} = ${count} 个板子`;
-
-  const fragment = document.createDocumentFragment();
-
-  for (let z = 0; z < state.dimensions.depth; z += 1) {
-    for (let y = 0; y < state.dimensions.height; y += 1) {
-      for (let x = 0; x < state.dimensions.width; x += 1) {
-        const key = getBoardKey(x, y, z);
-        const field = document.createElement("label");
-        field.className = "board-field";
-
-        const title = document.createElement("span");
-        title.className = "board-field-title";
-        title.textContent = `第 ${z + 1} 深 / 第 ${y + 1} 行 / 第 ${x + 1} 列`;
-
-        const textarea = document.createElement("textarea");
-        textarea.value = state.boardTexts[key] || "";
-        textarea.rows = 4;
-        textarea.spellcheck = false;
-        textarea.dataset.boardKey = key;
-        textarea.addEventListener("input", () => {
-          state.boardTexts[key] = textarea.value;
-          viewState.selectedId = null;
-          renderCells();
-          structureReadout.textContent = `当前共有 ${state.dimensions.depth} × ${state.dimensions.height} × ${state.dimensions.width} = ${count} 个板子`;
-        });
-
-        field.append(title, textarea);
-        fragment.appendChild(field);
-      }
-    }
-  }
-
-  boardEditorGrid.replaceChildren(fragment);
 }
 
 function syncDimensionsFromInputs({ allowFallback = true } = {}) {
@@ -950,6 +1263,7 @@ function syncDimensionsFromInputs({ allowFallback = true } = {}) {
     stopEditing({ commit: true });
   }
 
+  const beforeSnapshot = createHistorySnapshot();
   const nextWidth = Number.parseInt(widthInput.value, 10);
   const nextHeight = Number.parseInt(heightInput.value, 10);
   const nextDepth = Number.parseInt(depthInput.value, 10);
@@ -966,9 +1280,10 @@ function syncDimensionsFromInputs({ allowFallback = true } = {}) {
   gridSpec.depth = state.dimensions.depth;
   syncSliceSizesToDimensions();
   viewState.selectedId = null;
-  ensureBoardTexts();
+  ensureBoards();
   renderCells();
   renderConfig();
+  commitHistorySnapshot(beforeSnapshot);
 }
 
 function resetDimensionInputs() {
@@ -977,7 +1292,7 @@ function resetDimensionInputs() {
   depthInput.value = state.dimensions.depth;
 }
 
-function syncShapeControlsFromInputs({ allowFallback = true } = {}) {
+function syncShapeControlsFromInputs({ allowFallback = true, beforeSnapshot = null } = {}) {
   if (editingState) {
     stopEditing({ commit: true });
   }
@@ -991,9 +1306,10 @@ function syncShapeControlsFromInputs({ allowFallback = true } = {}) {
   viewState.textSize = toTextSize(textSizeInput.value, viewState.textSize);
   updateShapeControls();
   renderCells();
+  commitHistorySnapshot(beforeSnapshot);
 }
 
-function syncSliceControlInput(input) {
+function syncSliceControlInput(input, beforeSnapshot = null) {
   const field = input.closest(".slice-control");
   if (!field) {
     return;
@@ -1011,22 +1327,7 @@ function syncSliceControlInput(input) {
   state.sliceSizes[listName][index] = nextValue;
   viewState.selectedId = null;
   renderCells();
-}
-
-function switchPage(targetId) {
-  tabButtons.forEach((button) => {
-    button.classList.toggle("is-active", button.dataset.pageTarget === targetId);
-  });
-
-  pages.forEach((page) => {
-    const active = page.id === targetId;
-    page.classList.toggle("is-active", active);
-    page.hidden = !active;
-  });
-
-  if (targetId === "previewPage") {
-    applyViewTransform();
-  }
+  commitHistorySnapshot(beforeSnapshot);
 }
 
 function handlePointerDown(event) {
@@ -1093,26 +1394,58 @@ scene.addEventListener("pointerup", handlePointerUp);
 scene.addEventListener("pointercancel", handlePointerUp);
 scene.addEventListener("wheel", handleWheel, { passive: false });
 window.addEventListener("resize", updateEditingOverlayBounds);
+window.addEventListener("beforeunload", (event) => {
+  const hasUncommittedEdit = editingState && editingState.textarea.value !== editingState.originalText;
+  if (!saveState.isDirty && !hasUncommittedEdit) {
+    return;
+  }
+
+  event.preventDefault();
+  event.returnValue = "";
+});
 resetViewButton.addEventListener("click", resetView);
+undoButton.addEventListener("click", undoHistoryStep);
+redoButton.addEventListener("click", redoHistoryStep);
+saveButton.addEventListener("click", saveBoardState);
+spacingInput.addEventListener("focus", () => {
+  if (!spacingChangeSnapshot) {
+    spacingChangeSnapshot = createHistorySnapshot();
+  }
+});
+spacingInput.addEventListener("pointerdown", () => {
+  if (!spacingChangeSnapshot) {
+    spacingChangeSnapshot = createHistorySnapshot();
+  }
+});
 spacingInput.addEventListener("input", () => {
   viewState.gap = Number.parseInt(spacingInput.value, 10);
   applyCellSpacing();
+});
+spacingInput.addEventListener("change", () => {
+  commitHistorySnapshot(spacingChangeSnapshot);
+  spacingChangeSnapshot = null;
 });
 rowRuleSelect.addEventListener("change", () => {
   if (editingState) {
     stopEditing({ commit: true });
   }
 
+  const beforeSnapshot = createHistorySnapshot();
   viewState.rowRule = rowRuleSelect.value;
   renderCells();
+  commitHistorySnapshot(beforeSnapshot);
 });
 detailPreviewSelect.addEventListener("change", () => {
+  const beforeSnapshot = createHistorySnapshot();
   viewState.detailPreview = detailPreviewSelect.value === "on";
   cuboid.classList.toggle("has-detail-preview", viewState.detailPreview);
+  commitHistorySnapshot(beforeSnapshot);
 });
 markerVisibilitySelect.addEventListener("change", () => {
+  const beforeSnapshot = createHistorySnapshot();
   viewState.markersVisible = markerVisibilitySelect.value === "on";
   cuboid.classList.toggle("has-markers", viewState.markersVisible);
+  commitHistorySnapshot(beforeSnapshot);
 });
 
 [widthInput, heightInput, depthInput].forEach((input) => {
@@ -1133,33 +1466,37 @@ markerVisibilitySelect.addEventListener("change", () => {
   });
 });
 
+textSizeInput.addEventListener("focus", () => {
+  if (!textSizeChangeSnapshot) {
+    textSizeChangeSnapshot = createHistorySnapshot();
+  }
+});
+textSizeInput.addEventListener("pointerdown", () => {
+  if (!textSizeChangeSnapshot) {
+    textSizeChangeSnapshot = createHistorySnapshot();
+  }
+});
 textSizeInput.addEventListener("input", () => syncShapeControlsFromInputs({ allowFallback: false }));
-textSizeInput.addEventListener("change", () => syncShapeControlsFromInputs());
-textSizeInput.addEventListener("blur", () => syncShapeControlsFromInputs());
+textSizeInput.addEventListener("change", () => {
+  syncShapeControlsFromInputs({ beforeSnapshot: textSizeChangeSnapshot });
+  textSizeChangeSnapshot = null;
+});
+textSizeInput.addEventListener("blur", () => {
+  syncShapeControlsFromInputs({ beforeSnapshot: textSizeChangeSnapshot });
+  textSizeChangeSnapshot = null;
+});
 textSizeInput.addEventListener("keydown", (event) => {
   if (event.key !== "Enter") {
     return;
   }
 
   event.preventDefault();
-  syncShapeControlsFromInputs();
-  textSizeInput.blur();
-});
-
-fillDefaultsButton.addEventListener("click", () => {
-  if (editingState) {
-    stopEditing({ commit: true });
+  if (!textSizeChangeSnapshot) {
+    textSizeChangeSnapshot = createHistorySnapshot();
   }
-
-  ensureBoardTexts({ reset: true });
-  renderCells();
-  renderConfig();
-});
-
-tabButtons.forEach((button) => {
-  button.addEventListener("click", () => {
-    switchPage(button.dataset.pageTarget);
-  });
+  syncShapeControlsFromInputs({ beforeSnapshot: textSizeChangeSnapshot });
+  textSizeChangeSnapshot = null;
+  textSizeInput.blur();
 });
 
 document.addEventListener("click", (event) => {
@@ -1184,6 +1521,28 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
+  const key = event.key.toLowerCase();
+  const isSaveShortcut = (event.ctrlKey || event.metaKey) && key === "s";
+  const isUndoShortcut = (event.ctrlKey || event.metaKey) && !event.shiftKey && key === "z";
+  const isRedoShortcut = (event.ctrlKey || event.metaKey) && (key === "y" || (event.shiftKey && key === "z"));
+
+  if (isSaveShortcut) {
+    event.preventDefault();
+    saveBoardState();
+    return;
+  }
+
+  if (isUndoShortcut || isRedoShortcut) {
+    event.preventDefault();
+    if (isUndoShortcut) {
+      undoHistoryStep();
+      return;
+    }
+
+    redoHistoryStep();
+    return;
+  }
+
   if (event.key !== "Escape" || editingState) {
     return;
   }
@@ -1194,10 +1553,21 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-ensureBoardTexts();
-updateShapeControls();
-renderCells();
-renderConfig();
+async function initializeApp() {
+  await loadSavedState();
+  rowRuleSelect.value = viewState.rowRule;
+  detailPreviewSelect.value = viewState.detailPreview ? "on" : "off";
+  markerVisibilitySelect.value = viewState.markersVisible ? "on" : "off";
+  updateShapeControls();
+  renderCells();
+  renderConfig();
+  historyState.undoStack = [];
+  historyState.redoStack = [];
+  updateHistoryButtons();
+  updateSaveStatus(saveState.loadError ? { variant: "error", message: "未连接保存" } : undefined);
+}
+
+initializeApp();
 
 window.knowledgeBoard = {
   gridSpec,
@@ -1207,5 +1577,6 @@ window.knowledgeBoard = {
   },
   viewState,
   ROW_RULES,
-  resetView
+  resetView,
+  saveBoardState
 };
