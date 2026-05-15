@@ -117,6 +117,45 @@ button {
   color: #b42318;
 }
 
+.board-window-toolbar {
+  position: fixed;
+  left: 16px;
+  top: 60px;
+  z-index: 12;
+  display: flex;
+  padding: 5px;
+  border: 1px solid rgba(28, 36, 48, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 12px 26px rgba(38, 47, 64, 0.12);
+  backdrop-filter: blur(10px);
+}
+
+.board-window-toolbar button {
+  height: 28px;
+  min-width: 92px;
+  border: 0;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #263241;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.board-window-toolbar button:hover:not(:disabled),
+.board-window-toolbar button:focus-visible {
+  background: #1c2430;
+  color: #ffffff;
+  outline: 0;
+}
+
+.board-window-toolbar button:disabled {
+  color: rgba(52, 64, 84, 0.36);
+  cursor: not-allowed;
+}
+
 .text-format-toolbar {
   display: flex;
   align-items: center;
@@ -132,7 +171,7 @@ button {
 .top-format-toolbar {
   position: fixed;
   left: 16px;
-  top: 60px;
+  top: 104px;
   z-index: 12;
 }
 
@@ -445,6 +484,21 @@ button {
   visibility: hidden;
 }
 
+.note.is-board-hidden {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.note.is-board-hidden .note-lines,
+.note.is-board-hidden .detail-popover {
+  opacity: 0;
+  visibility: hidden;
+}
+
 .note-editor {
   position: absolute;
   inset: 0;
@@ -662,6 +716,14 @@ button {
 .cell.is-selected .note {
   border-color: rgba(209, 73, 91, 0.48);
   background: rgba(255, 255, 255, 0.92);
+}
+
+.cell.is-selected .note.is-board-hidden {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  opacity: 0;
+  visibility: hidden;
 }
 
 .link-pin {

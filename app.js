@@ -95,6 +95,7 @@ const undoButton = document.querySelector("#undoButton");
 const redoButton = document.querySelector("#redoButton");
 const saveButton = document.querySelector("#saveButton");
 const saveStatus = document.querySelector("#saveStatus");
+const boardVisibilityButton = document.querySelector("#boardVisibilityButton");
 const topFormatToolbar = document.querySelector("#topFormatToolbar");
 
 const viewState = {
@@ -242,6 +243,7 @@ function applyHistorySnapshot(snapshot) {
   renderCells();
   renderConfig();
   selectionText.textContent = "尚未选择。";
+  updateBoardVisibilityButton();
   historyState.isRestoring = false;
   updateHistoryButtons();
 }
@@ -507,7 +509,8 @@ function createBoardFromText(key, text) {
   return {
     id: key,
     blocks: createTextBlocks(text),
-    links: []
+    links: [],
+    hidden: false
   };
 }
 
@@ -595,7 +598,8 @@ function normalizeBoard(key, board) {
   return {
     id: board.id || key,
     blocks: board.blocks.map((block, index) => normalizeBlock(block, index)),
-    links: Array.isArray(board.links) ? board.links : []
+    links: Array.isArray(board.links) ? board.links : [],
+    hidden: Boolean(board.hidden)
   };
 }
 
@@ -616,6 +620,7 @@ function setBoardText(key, text) {
   const previousBoard = normalizeBoard(key, state.boards[key]);
   const nextBoard = createBoardFromText(key, text);
   nextBoard.links = previousBoard.links;
+  nextBoard.hidden = previousBoard.hidden;
   state.boards[key] = nextBoard;
 }
 
@@ -627,7 +632,8 @@ function setBoardBlocks(key, blocks) {
   state.boards[key] = {
     id: previousBoard.id || key,
     blocks: safeBlocks,
-    links: previousBoard.links
+    links: previousBoard.links,
+    hidden: previousBoard.hidden
   };
 }
 
@@ -670,7 +676,9 @@ function buildCells() {
     for (let y = 0; y < state.dimensions.height; y += 1) {
       for (let x = 0; x < state.dimensions.width; x += 1) {
         const index = getBoardIndex(x, y, z);
-        const blocks = getBoardBlocks(getBoardKey(x, y, z));
+        const key = getBoardKey(x, y, z);
+        const board = normalizeBoard(key, state.boards[key]);
+        const blocks = board.blocks;
         const lines = blocks.map((block) => block.text);
         const title = lines[0] || `板子 ${String(index + 1).padStart(2, "0")}`;
         const points = lines.slice(1);
@@ -686,6 +694,7 @@ function buildCells() {
             blocks
           },
           opacity: 1,
+          hidden: board.hidden,
           links: []
         });
       }
@@ -1077,12 +1086,56 @@ function selectCell(cell) {
   viewState.selectedId = cell.id;
   updateAllCellStates();
   updateSelection(cell);
+  updateBoardVisibilityButton();
 }
 
 function clearSelection() {
   viewState.selectedId = null;
   updateAllCellStates();
   selectionText.textContent = "尚未选择。";
+  updateBoardVisibilityButton();
+}
+
+function updateBoardVisibilityButton() {
+  if (!boardVisibilityButton) {
+    return;
+  }
+
+  const selectedCell = viewState.selectedId ? getCellById(viewState.selectedId) : null;
+  boardVisibilityButton.disabled = !selectedCell;
+
+  if (!selectedCell) {
+    boardVisibilityButton.textContent = "最小化板子";
+    boardVisibilityButton.title = "先选中一个小长方体";
+    return;
+  }
+
+  boardVisibilityButton.textContent = selectedCell.hidden ? "最大化板子" : "最小化板子";
+  boardVisibilityButton.title = selectedCell.hidden ? "恢复选中板子" : "隐藏选中板子";
+}
+
+function toggleBoardVisibility(cell) {
+  if (editingState) {
+    stopEditing({ commit: true });
+  }
+
+  const beforeSnapshot = createHistorySnapshot();
+  const key = getBoardKeyFromCoord(cell.coord);
+  const board = normalizeBoard(key, state.boards[key]);
+  state.boards[key] = {
+    ...board,
+    hidden: !board.hidden
+  };
+  renderCells();
+
+  const nextCell = getCellById(cell.id);
+  if (nextCell && viewState.selectedId === cell.id) {
+    selectCell(nextCell);
+  } else {
+    updateBoardVisibilityButton();
+  }
+
+  commitHistorySnapshot(beforeSnapshot);
 }
 
 function syncEditingRows() {
@@ -1373,6 +1426,7 @@ function renderCell(cell) {
 
   const note = document.createElement("div");
   note.className = "note";
+  note.classList.toggle("is-board-hidden", cell.hidden);
   note.title = getFullText(cell);
   note.addEventListener("pointerdown", (event) => {
     event.stopPropagation();
@@ -1505,6 +1559,7 @@ function renderCells() {
   });
   renderSliceControls();
   applyViewTransform();
+  updateBoardVisibilityButton();
 }
 
 function setCuboidBounds() {
@@ -1892,6 +1947,18 @@ resetViewButton.addEventListener("click", resetView);
 undoButton.addEventListener("click", undoHistoryStep);
 redoButton.addEventListener("click", redoHistoryStep);
 saveButton.addEventListener("click", saveBoardState);
+boardVisibilityButton.addEventListener("click", (event) => {
+  event.stopPropagation();
+
+  if (!viewState.selectedId) {
+    return;
+  }
+
+  const selectedCell = getCellById(viewState.selectedId);
+  if (selectedCell) {
+    toggleBoardVisibility(selectedCell);
+  }
+});
 spacingInput.addEventListener("focus", () => {
   if (!spacingChangeSnapshot) {
     spacingChangeSnapshot = createHistorySnapshot();
