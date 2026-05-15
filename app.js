@@ -1,4 +1,4 @@
-const gridSpec = {
+﻿const gridSpec = {
   width: 3,
   height: 2,
   depth: 2,
@@ -95,7 +95,10 @@ const undoButton = document.querySelector("#undoButton");
 const redoButton = document.querySelector("#redoButton");
 const saveButton = document.querySelector("#saveButton");
 const saveStatus = document.querySelector("#saveStatus");
-const boardVisibilityButton = document.querySelector("#boardVisibilityButton");
+const minimizeBoardsButton = document.querySelector("#minimizeBoardsButton");
+const maximizeBoardsButton = document.querySelector("#maximizeBoardsButton");
+const minimizeBoxesButton = document.querySelector("#minimizeBoxesButton");
+const maximizeBoxesButton = document.querySelector("#maximizeBoxesButton");
 const topFormatToolbar = document.querySelector("#topFormatToolbar");
 
 const viewState = {
@@ -108,6 +111,7 @@ const viewState = {
   markersVisible: false,
   textSize: 10,
   selectedId: null,
+  selectedIds: new Set(),
   dragging: false,
   moved: false,
   lastX: 0,
@@ -235,6 +239,7 @@ function applyHistorySnapshot(snapshot) {
   viewState.markersVisible = snapshot.view.markersVisible;
   viewState.textSize = snapshot.view.textSize;
   viewState.selectedId = null;
+  viewState.selectedIds.clear();
 
   rowRuleSelect.value = viewState.rowRule;
   detailPreviewSelect.value = viewState.detailPreview ? "on" : "off";
@@ -243,7 +248,7 @@ function applyHistorySnapshot(snapshot) {
   renderCells();
   renderConfig();
   selectionText.textContent = "尚未选择。";
-  updateBoardVisibilityButton();
+  updateWindowControlButtons();
   historyState.isRestoring = false;
   updateHistoryButtons();
 }
@@ -510,7 +515,8 @@ function createBoardFromText(key, text) {
     id: key,
     blocks: createTextBlocks(text),
     links: [],
-    hidden: false
+    hidden: false,
+    boxHidden: false
   };
 }
 
@@ -599,7 +605,8 @@ function normalizeBoard(key, board) {
     id: board.id || key,
     blocks: board.blocks.map((block, index) => normalizeBlock(block, index)),
     links: Array.isArray(board.links) ? board.links : [],
-    hidden: Boolean(board.hidden)
+    hidden: Boolean(board.hidden),
+    boxHidden: Boolean(board.boxHidden)
   };
 }
 
@@ -621,6 +628,7 @@ function setBoardText(key, text) {
   const nextBoard = createBoardFromText(key, text);
   nextBoard.links = previousBoard.links;
   nextBoard.hidden = previousBoard.hidden;
+  nextBoard.boxHidden = previousBoard.boxHidden;
   state.boards[key] = nextBoard;
 }
 
@@ -633,7 +641,8 @@ function setBoardBlocks(key, blocks) {
     id: previousBoard.id || key,
     blocks: safeBlocks,
     links: previousBoard.links,
-    hidden: previousBoard.hidden
+    hidden: previousBoard.hidden,
+    boxHidden: previousBoard.boxHidden
   };
 }
 
@@ -695,6 +704,7 @@ function buildCells() {
           },
           opacity: 1,
           hidden: board.hidden,
+          boxHidden: board.boxHidden,
           links: []
         });
       }
@@ -1084,57 +1094,122 @@ function updateEditorMarkers(editor) {
 
 function selectCell(cell) {
   viewState.selectedId = cell.id;
+  viewState.selectedIds = new Set([cell.id]);
   updateAllCellStates();
-  updateSelection(cell);
-  updateBoardVisibilityButton();
+  updateSelection();
+  updateWindowControlButtons();
+}
+
+function toggleCellSelection(cell) {
+  const selectedIds = new Set(viewState.selectedIds);
+
+  if (selectedIds.has(cell.id)) {
+    selectedIds.delete(cell.id);
+  } else {
+    selectedIds.add(cell.id);
+    viewState.selectedId = cell.id;
+  }
+
+  viewState.selectedIds = selectedIds;
+  if (!selectedIds.has(viewState.selectedId)) {
+    const nextSelectedIds = Array.from(selectedIds);
+    viewState.selectedId = nextSelectedIds[nextSelectedIds.length - 1] || null;
+  }
+
+  updateAllCellStates();
+  updateSelection();
+  updateWindowControlButtons();
+}
+
+function selectCellFromEvent(cell, event) {
+  if (event.ctrlKey) {
+    toggleCellSelection(cell);
+    return;
+  }
+
+  selectCell(cell);
 }
 
 function clearSelection() {
   viewState.selectedId = null;
+  viewState.selectedIds.clear();
   updateAllCellStates();
   selectionText.textContent = "尚未选择。";
-  updateBoardVisibilityButton();
+  updateWindowControlButtons();
 }
 
-function updateBoardVisibilityButton() {
-  if (!boardVisibilityButton) {
+function getSelectedCells() {
+  return Array.from(viewState.selectedIds)
+    .map((id) => getCellById(id))
+    .filter(Boolean);
+}
+
+function updateWindowControlButtons() {
+  if (!minimizeBoardsButton || !maximizeBoardsButton || !minimizeBoxesButton || !maximizeBoxesButton) {
     return;
   }
 
-  const selectedCell = viewState.selectedId ? getCellById(viewState.selectedId) : null;
-  boardVisibilityButton.disabled = !selectedCell;
-
-  if (!selectedCell) {
-    boardVisibilityButton.textContent = "最小化板子";
-    boardVisibilityButton.title = "先选中一个小长方体";
-    return;
-  }
-
-  boardVisibilityButton.textContent = selectedCell.hidden ? "最大化板子" : "最小化板子";
-  boardVisibilityButton.title = selectedCell.hidden ? "恢复选中板子" : "隐藏选中板子";
+  const selectedCount = getSelectedCells().length;
+  const disabled = selectedCount === 0;
+  minimizeBoardsButton.disabled = disabled;
+  maximizeBoardsButton.disabled = disabled;
+  minimizeBoxesButton.disabled = disabled;
+  maximizeBoxesButton.disabled = disabled;
+  minimizeBoardsButton.title = disabled ? "先选中一个或多个小长方体" : `隐藏 ${selectedCount} 个选中板子`;
+  maximizeBoardsButton.title = disabled ? "先选中一个或多个小长方体" : `恢复 ${selectedCount} 个选中板子`;
+  minimizeBoxesButton.title = disabled ? "先选中一个或多个小长方体" : `隐藏 ${selectedCount} 个选中方框`;
+  maximizeBoxesButton.title = disabled ? "先选中一个或多个小长方体" : `恢复 ${selectedCount} 个选中方框`;
 }
 
-function toggleBoardVisibility(cell) {
+function setSelectedBoardsVisibility(hidden) {
   if (editingState) {
     stopEditing({ commit: true });
   }
 
-  const beforeSnapshot = createHistorySnapshot();
-  const key = getBoardKeyFromCoord(cell.coord);
-  const board = normalizeBoard(key, state.boards[key]);
-  state.boards[key] = {
-    ...board,
-    hidden: !board.hidden
-  };
-  renderCells();
-
-  const nextCell = getCellById(cell.id);
-  if (nextCell && viewState.selectedId === cell.id) {
-    selectCell(nextCell);
-  } else {
-    updateBoardVisibilityButton();
+  const selectedCells = getSelectedCells();
+  if (selectedCells.length === 0) {
+    updateWindowControlButtons();
+    return;
   }
 
+  const beforeSnapshot = createHistorySnapshot();
+  selectedCells.forEach((cell) => {
+    const key = getBoardKeyFromCoord(cell.coord);
+    const board = normalizeBoard(key, state.boards[key]);
+    state.boards[key] = {
+      ...board,
+      hidden
+    };
+  });
+  renderCells();
+  updateSelection();
+  updateWindowControlButtons();
+  commitHistorySnapshot(beforeSnapshot);
+}
+
+function setSelectedBoxesVisibility(boxHidden) {
+  if (editingState) {
+    stopEditing({ commit: true });
+  }
+
+  const selectedCells = getSelectedCells();
+  if (selectedCells.length === 0) {
+    updateWindowControlButtons();
+    return;
+  }
+
+  const beforeSnapshot = createHistorySnapshot();
+  selectedCells.forEach((cell) => {
+    const key = getBoardKeyFromCoord(cell.coord);
+    const board = normalizeBoard(key, state.boards[key]);
+    state.boards[key] = {
+      ...board,
+      boxHidden
+    };
+  });
+  renderCells();
+  updateSelection();
+  updateWindowControlButtons();
   commitHistorySnapshot(beforeSnapshot);
 }
 
@@ -1179,7 +1254,6 @@ function stopEditing({ commit }) {
   floatingToolbar.remove();
   editingState = null;
   updateFormatToolbarState();
-  viewState.selectedId = cellId;
   renderCells();
   renderConfig();
 
@@ -1205,6 +1279,7 @@ function beginEditing(cell, note) {
   const key = getBoardKeyFromCoord(cell.coord);
   const originalBlocks = cloneData(getBoardBlocks(key));
   viewState.selectedId = cell.id;
+  viewState.selectedIds = new Set([cell.id]);
   updateAllCellStates();
   note.classList.add("is-editing");
 
@@ -1440,7 +1515,7 @@ function renderCell(cell) {
     if (editingState) {
       stopEditing({ commit: true });
     }
-    selectCell(cell);
+    selectCellFromEvent(cell, event);
   });
   note.addEventListener("dblclick", (event) => {
     event.preventDefault();
@@ -1501,7 +1576,7 @@ function renderCell(cell) {
     cellPointerStart = {
       x: event.clientX,
       y: event.clientY,
-      wasSelected: viewState.selectedId === cell.id
+      wasSelected: viewState.selectedIds.has(cell.id)
     };
   });
 
@@ -1523,7 +1598,7 @@ function renderCell(cell) {
     if (editingState) {
       stopEditing({ commit: true });
     }
-    selectCell(cell);
+    selectCellFromEvent(cell, event);
   });
 
   element.addEventListener("click", (event) => {
@@ -1559,7 +1634,7 @@ function renderCells() {
   });
   renderSliceControls();
   applyViewTransform();
-  updateBoardVisibilityButton();
+  updateWindowControlButtons();
 }
 
 function setCuboidBounds() {
@@ -1742,8 +1817,9 @@ function updateCellClasses(element, cell) {
   }
 
   element.classList.toggle("is-muted", cell.opacity < 1);
-  element.classList.toggle("is-selected", cell.id === viewState.selectedId);
+  element.classList.toggle("is-selected", viewState.selectedIds.has(cell.id));
   element.classList.toggle("is-editing", editingState?.cellId === cell.id);
+  element.classList.toggle("is-box-hidden", cell.boxHidden);
 }
 
 function updateAllCellStates() {
@@ -1753,9 +1829,19 @@ function updateAllCellStates() {
   });
 }
 
-function updateSelection(cell) {
-  const selected = viewState.selectedId === cell.id;
-  selectionText.textContent = selected ? getFullText(cell) : "尚未选择。";
+function updateSelection() {
+  const selectedCells = getSelectedCells();
+  if (selectedCells.length === 0) {
+    selectionText.textContent = "尚未选择。";
+    return;
+  }
+
+  if (selectedCells.length === 1) {
+    selectionText.textContent = getFullText(selectedCells[0]);
+    return;
+  }
+
+  selectionText.textContent = `已选择 ${selectedCells.length} 个板子。`;
 }
 
 function applyViewTransform() {
@@ -1816,6 +1902,7 @@ function syncDimensionsFromInputs({ allowFallback = true } = {}) {
   gridSpec.depth = state.dimensions.depth;
   syncSliceSizesToDimensions();
   viewState.selectedId = null;
+  viewState.selectedIds.clear();
   ensureBoards();
   renderCells();
   renderConfig();
@@ -1862,6 +1949,7 @@ function syncSliceControlInput(input, beforeSnapshot = null) {
   const nextValue = toCellSize(input.value, axis, fallback);
   state.sliceSizes[listName][index] = nextValue;
   viewState.selectedId = null;
+  viewState.selectedIds.clear();
   renderCells();
   commitHistorySnapshot(beforeSnapshot);
 }
@@ -1916,11 +2004,13 @@ function resetView() {
   viewState.rotationY = -34;
   viewState.zoom = ZOOM_BASE;
   viewState.selectedId = null;
+  viewState.selectedIds.clear();
   cells.forEach((cell) => {
     cell.opacity = 1;
   });
   updateAllCellStates();
   selectionText.textContent = "尚未选择。";
+  updateWindowControlButtons();
   applyViewTransform();
 }
 
@@ -1947,17 +2037,24 @@ resetViewButton.addEventListener("click", resetView);
 undoButton.addEventListener("click", undoHistoryStep);
 redoButton.addEventListener("click", redoHistoryStep);
 saveButton.addEventListener("click", saveBoardState);
-boardVisibilityButton.addEventListener("click", (event) => {
+minimizeBoardsButton.addEventListener("click", (event) => {
   event.stopPropagation();
+  setSelectedBoardsVisibility(true);
+});
 
-  if (!viewState.selectedId) {
-    return;
-  }
+maximizeBoardsButton.addEventListener("click", (event) => {
+  event.stopPropagation();
+  setSelectedBoardsVisibility(false);
+});
 
-  const selectedCell = getCellById(viewState.selectedId);
-  if (selectedCell) {
-    toggleBoardVisibility(selectedCell);
-  }
+minimizeBoxesButton.addEventListener("click", (event) => {
+  event.stopPropagation();
+  setSelectedBoxesVisibility(true);
+});
+
+maximizeBoxesButton.addEventListener("click", (event) => {
+  event.stopPropagation();
+  setSelectedBoxesVisibility(false);
 });
 spacingInput.addEventListener("focus", () => {
   if (!spacingChangeSnapshot) {
@@ -2099,7 +2196,7 @@ document.addEventListener("keydown", (event) => {
     return;
   }
 
-  if (viewState.selectedId) {
+  if (viewState.selectedIds.size > 0) {
     event.preventDefault();
     clearSelection();
   }

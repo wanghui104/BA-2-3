@@ -122,7 +122,9 @@ button {
   left: 16px;
   top: 60px;
   z-index: 12;
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  gap: 6px;
   padding: 5px;
   border: 1px solid rgba(28, 36, 48, 0.14);
   border-radius: 8px;
@@ -171,7 +173,7 @@ button {
 .top-format-toolbar {
   position: fixed;
   left: 16px;
-  top: 104px;
+  top: 144px;
   z-index: 12;
 }
 
@@ -724,6 +726,18 @@ button {
   box-shadow: none;
   opacity: 0;
   visibility: hidden;
+}
+
+.cell.is-box-hidden .face,
+.cell.is-box-hidden .cell-billboard-label,
+.cell.is-box-hidden .link-pin {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.cell.is-box-hidden.is-selected .face {
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .link-pin {
