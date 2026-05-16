@@ -828,7 +828,11 @@ button {
 }
 
 .cell.is-box-hidden.is-selected .face {
-  border-color: transparent;
+  border-color: rgba(209, 73, 91, 0.82);
+  border-style: dotted;
+  background: transparent;
+  opacity: 1;
+  visibility: visible;
   box-shadow: none;
 }
 
