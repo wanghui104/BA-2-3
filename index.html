@@ -107,16 +107,70 @@
                   </div>
                   <div class="dimension-grid dimension-grid-preview">
                     <label>
-                      <span>宽</span>
-                      <input id="widthInput" type="text" inputmode="numeric" pattern="[0-9]*" value="3">
+                      <div class="dimension-title-row">
+                        <span>宽</span>
+                        <input id="widthInput" class="dimension-inline-input" type="text" inputmode="numeric" pattern="[0-9]*" value="3">
+                      </div>
+                      <div class="dimension-side-row">
+                        <div class="side-slice-control" aria-label="从左侧调整宽度">
+                          <span>左</span>
+                          <div class="side-slice-buttons">
+                            <button type="button" id="addWidthLeftButton" aria-label="在宽度最左边增加一列">▲</button>
+                            <button type="button" id="removeWidthLeftButton" aria-label="从宽度最左边减少一列">▼</button>
+                          </div>
+                        </div>
+                        <div class="side-slice-control" aria-label="从右侧调整宽度">
+                          <span>右</span>
+                          <div class="side-slice-buttons">
+                            <button type="button" id="addWidthRightButton" aria-label="在宽度最右边增加一列">▲</button>
+                            <button type="button" id="removeWidthRightButton" aria-label="从宽度最右边减少一列">▼</button>
+                          </div>
+                        </div>
+                      </div>
                     </label>
                     <label>
-                      <span>高</span>
-                      <input id="heightInput" type="text" inputmode="numeric" pattern="[0-9]*" value="2">
+                      <div class="dimension-title-row">
+                        <span>高</span>
+                        <input id="heightInput" class="dimension-inline-input" type="text" inputmode="numeric" pattern="[0-9]*" value="2">
+                      </div>
+                      <div class="dimension-side-row">
+                        <div class="side-slice-control" aria-label="从上侧调整高度">
+                          <span>上</span>
+                          <div class="side-slice-buttons">
+                            <button type="button" id="addHeightTopButton" aria-label="在高度最上边增加一层">▲</button>
+                            <button type="button" id="removeHeightTopButton" aria-label="从高度最上边减少一层">▼</button>
+                          </div>
+                        </div>
+                        <div class="side-slice-control" aria-label="从下侧调整高度">
+                          <span>下</span>
+                          <div class="side-slice-buttons">
+                            <button type="button" id="addHeightBottomButton" aria-label="在高度最下边增加一层">▲</button>
+                            <button type="button" id="removeHeightBottomButton" aria-label="从高度最下边减少一层">▼</button>
+                          </div>
+                        </div>
+                      </div>
                     </label>
                     <label>
-                      <span>深</span>
-                      <input id="depthInput" type="text" inputmode="numeric" pattern="[0-9]*" value="2">
+                      <div class="dimension-title-row">
+                        <span>深</span>
+                        <input id="depthInput" class="dimension-inline-input" type="text" inputmode="numeric" pattern="[0-9]*" value="2">
+                      </div>
+                      <div class="dimension-side-row">
+                        <div class="side-slice-control" aria-label="从前侧调整深度">
+                          <span>前</span>
+                          <div class="side-slice-buttons">
+                            <button type="button" id="addDepthFrontButton" aria-label="在深度最前边增加一层">▲</button>
+                            <button type="button" id="removeDepthFrontButton" aria-label="从深度最前边减少一层">▼</button>
+                          </div>
+                        </div>
+                        <div class="side-slice-control" aria-label="从后侧调整深度">
+                          <span>后</span>
+                          <div class="side-slice-buttons">
+                            <button type="button" id="addDepthBackButton" aria-label="在深度最后边增加一层">▲</button>
+                            <button type="button" id="removeDepthBackButton" aria-label="从深度最后边减少一层">▼</button>
+                          </div>
+                        </div>
+                      </div>
                     </label>
                   </div>
                 </div>

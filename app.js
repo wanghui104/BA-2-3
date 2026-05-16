@@ -93,6 +93,18 @@ const textSizeInput = document.querySelector("#textSizeInput");
 const widthInput = document.querySelector("#widthInput");
 const heightInput = document.querySelector("#heightInput");
 const depthInput = document.querySelector("#depthInput");
+const addWidthLeftButton = document.querySelector("#addWidthLeftButton");
+const removeWidthLeftButton = document.querySelector("#removeWidthLeftButton");
+const addWidthRightButton = document.querySelector("#addWidthRightButton");
+const removeWidthRightButton = document.querySelector("#removeWidthRightButton");
+const addHeightTopButton = document.querySelector("#addHeightTopButton");
+const removeHeightTopButton = document.querySelector("#removeHeightTopButton");
+const addHeightBottomButton = document.querySelector("#addHeightBottomButton");
+const removeHeightBottomButton = document.querySelector("#removeHeightBottomButton");
+const addDepthFrontButton = document.querySelector("#addDepthFrontButton");
+const removeDepthFrontButton = document.querySelector("#removeDepthFrontButton");
+const addDepthBackButton = document.querySelector("#addDepthBackButton");
+const removeDepthBackButton = document.querySelector("#removeDepthBackButton");
 const structureReadout = document.querySelector("#structureReadout");
 const undoButton = document.querySelector("#undoButton");
 const redoButton = document.querySelector("#redoButton");
@@ -637,6 +649,12 @@ function normalizeBoard(key, board) {
     hidden: Boolean(board.hidden),
     boxHidden: Boolean(board.boxHidden)
   };
+}
+
+function cloneBoardForKey(key, board) {
+  const nextBoard = normalizeBoard(key, board);
+  nextBoard.id = key;
+  return nextBoard;
 }
 
 function getBoardBlocks(key) {
@@ -2138,9 +2156,122 @@ function renderConfig() {
   widthInput.value = state.dimensions.width;
   heightInput.value = state.dimensions.height;
   depthInput.value = state.dimensions.depth;
+  updateDimensionSideControls();
   if (structureReadout) {
     structureReadout.textContent = `当前共有 ${state.dimensions.depth} × ${state.dimensions.height} × ${state.dimensions.width} = ${count} 个板子`;
   }
+}
+
+function updateDimensionSideControls() {
+  [
+    { axis: "width", add: addWidthLeftButton, remove: removeWidthLeftButton },
+    { axis: "width", add: addWidthRightButton, remove: removeWidthRightButton },
+    { axis: "height", add: addHeightTopButton, remove: removeHeightTopButton },
+    { axis: "height", add: addHeightBottomButton, remove: removeHeightBottomButton },
+    { axis: "depth", add: addDepthFrontButton, remove: removeDepthFrontButton },
+    { axis: "depth", add: addDepthBackButton, remove: removeDepthBackButton }
+  ].forEach(({ axis, add, remove }) => {
+    if (!add || !remove) {
+      return;
+    }
+
+    add.disabled = state.dimensions[axis] >= DIMENSION_MAX;
+    remove.disabled = state.dimensions[axis] <= DIMENSION_MIN;
+  });
+}
+
+function getCoordValue(coord, axis) {
+  return coord[axis === "width" ? "x" : axis === "height" ? "y" : "z"];
+}
+
+function setCoordValue(coord, axis, value) {
+  coord[axis === "width" ? "x" : axis === "height" ? "y" : "z"] = value;
+}
+
+function getDefaultSliceSize(axis) {
+  return gridSpec.cellSize[axis];
+}
+
+function getSliceSizeListName(axis) {
+  return `${axis}s`;
+}
+
+function shiftDimensionFromEdge(axis, edge, direction) {
+  const isAdding = direction > 0;
+  const isStartEdge = edge === "start";
+  const currentLength = state.dimensions[axis];
+  const nextLength = currentLength + (isAdding ? 1 : -1);
+
+  if (nextLength < DIMENSION_MIN || nextLength > DIMENSION_MAX) {
+    updateDimensionSideControls();
+    return;
+  }
+
+  if (editingState) {
+    stopEditing({ commit: true });
+  }
+
+  const beforeSnapshot = createHistorySnapshot();
+  const nextBoards = {};
+  const nextDimensions = {
+    ...state.dimensions,
+    [axis]: nextLength
+  };
+  const listName = getSliceSizeListName(axis);
+  const currentSizes = state.sliceSizes[listName];
+  const nextSizes = isAdding
+    ? (
+      isStartEdge
+        ? [getDefaultSliceSize(axis), ...currentSizes.slice(0, currentLength)]
+        : [...currentSizes.slice(0, currentLength), getDefaultSliceSize(axis)]
+    )
+    : (
+      isStartEdge
+        ? currentSizes.slice(1)
+        : currentSizes.slice(0, nextLength)
+    );
+
+  state.dimensions = nextDimensions;
+  gridSpec[axis] = nextLength;
+  state.sliceSizes[listName] = nextSizes;
+
+  for (let z = 0; z < nextDimensions.depth; z += 1) {
+    for (let y = 0; y < nextDimensions.height; y += 1) {
+      for (let x = 0; x < nextDimensions.width; x += 1) {
+        const nextCoord = { x, y, z };
+        const nextKey = getBoardKeyFromCoord(nextCoord);
+        const nextAxisValue = getCoordValue(nextCoord, axis);
+        const previousCoord = { x, y, z };
+        let previousBoard = null;
+
+        if (isAdding) {
+          if (isStartEdge && nextAxisValue > 0) {
+            setCoordValue(previousCoord, axis, nextAxisValue - 1);
+            previousBoard = state.boards[getBoardKeyFromCoord(previousCoord)];
+          } else if (!isStartEdge && nextAxisValue < currentLength) {
+            previousBoard = state.boards[nextKey];
+          }
+        } else if (isStartEdge) {
+          setCoordValue(previousCoord, axis, nextAxisValue + 1);
+          previousBoard = state.boards[getBoardKeyFromCoord(previousCoord)];
+        } else {
+          previousBoard = state.boards[nextKey];
+        }
+
+        nextBoards[nextKey] = previousBoard
+          ? cloneBoardForKey(nextKey, previousBoard)
+          : createBoardFromText(nextKey, getDefaultText(getBoardIndex(x, y, z)));
+      }
+    }
+  }
+
+  state.boards = nextBoards;
+  viewState.selectedId = null;
+  viewState.selectedIds.clear();
+  ensureBoards();
+  renderCells();
+  renderConfig();
+  commitHistorySnapshot(beforeSnapshot);
 }
 
 function syncDimensionsFromInputs({ allowFallback = true } = {}) {
@@ -2323,6 +2454,67 @@ maximizeBoxesButton.addEventListener("click", (event) => {
   event.stopPropagation();
   setSelectedBoxesVisibility(false);
 });
+
+addWidthLeftButton?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  shiftDimensionFromEdge("width", "start", 1);
+});
+
+removeWidthLeftButton?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  shiftDimensionFromEdge("width", "start", -1);
+});
+
+addWidthRightButton?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  shiftDimensionFromEdge("width", "end", 1);
+});
+
+removeWidthRightButton?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  shiftDimensionFromEdge("width", "end", -1);
+});
+
+addHeightTopButton?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  shiftDimensionFromEdge("height", "start", 1);
+});
+
+removeHeightTopButton?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  shiftDimensionFromEdge("height", "start", -1);
+});
+
+addHeightBottomButton?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  shiftDimensionFromEdge("height", "end", 1);
+});
+
+removeHeightBottomButton?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  shiftDimensionFromEdge("height", "end", -1);
+});
+
+addDepthFrontButton?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  shiftDimensionFromEdge("depth", "end", 1);
+});
+
+removeDepthFrontButton?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  shiftDimensionFromEdge("depth", "end", -1);
+});
+
+addDepthBackButton?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  shiftDimensionFromEdge("depth", "start", 1);
+});
+
+removeDepthBackButton?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  shiftDimensionFromEdge("depth", "start", -1);
+});
+
 spacingInput.addEventListener("focus", () => {
   if (!spacingChangeSnapshot) {
     spacingChangeSnapshot = createHistorySnapshot();
