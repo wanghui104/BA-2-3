@@ -1,66 +1,79 @@
-# 2x2x3 知识长方体原型
+# 知识长方体使用说明
 
-这个目录目前完成第 1、2、3、4 步：概念原型、数据结构设计、静态 3D 模型、基础交互功能。
+这个文件只记录日常怎么打开、保存、退出。项目结构和开发说明在 `DEV_NOTES.md`。
 
-## 1. 概念原型
+## 开始一轮编辑
 
-- 大模型是一个 2x2x3 的透明长方体。
-- 12 个小长方体代表 12 个可填写知识 cell。
-- 相邻 cell 之间保留链接关系，用来表达知识匹配、类比、递进或互相印证。
-- 每个 cell 的文字面板在视觉上尽量朝向屏幕，后续旋转时会改成真正的 billboard 行为。
-- 部分 cell 先做成淡化状态，用来模拟之后的“隐藏 / 变淡 / 看穿后排内容”功能。
+1. 打开 PowerShell。
 
-## 2. 数据结构
+2. 进入项目目录：
 
-每个 cell 暂时使用空内容字段，之后可以替换成论点、论据、decision tree 或更大的学习片段。
-为了验证交互功能，当前页面先放入了少量测试文字。
-
-```js
-{
-  id: "cell-01",
-  label: "Cell 01",
-  coord: { x: 0, y: 0, z: 0 },
-  content: {
-    title: "",
-    summary: "",
-    type: "",
-    points: [],
-    decisionTree: null
-  },
-  opacity: 1,
-  links: ["cell-02", "cell-04", "cell-07"]
-}
+```powershell
+cd "C:\E drive\Dropbox\Study\myproject\project 25_05_09 BA 2-3"
 ```
 
-当前坐标定义：
+3. 启动服务器：
 
-- `x`: 横向，一共 3 格
-- `y`: 纵向，一共 2 格
-- `z`: 深度，一共 2 层
+```powershell
+node .\server.js
+```
 
-## 3. 静态模型
+4. 看到下面两行，表示服务器已经启动：
 
-已实现：
+```text
+Board server running at http://localhost:3000/
+Press Ctrl+C to stop the server.
+```
 
-- 透明 2x2x3 cell 网格
-- 每个 cell 的空白知识面板
-- 三维坐标轴
-- 邻接链接提示点
-- 淡化 cell 的视觉状态
+5. 在浏览器打开：
 
-## 4. 交互功能
+```text
+http://localhost:3000/
+```
 
-已实现：
+页面会自动读取上次保存的 `board-state.json`。
 
-- 鼠标拖动旋转
-- 滚轮 zoom in / out
-- 点击 cell 切换淡化状态，并在右侧显示当前 cell 摘要
-- 文字面板随视角做反向旋转，尽量保持朝向屏幕
-- 坐标轴跟随长方体一起旋转
-- 重置视角按钮
+## 修改和保存
 
-还未实现：
+1. 双击白板文字，修改内容。
+2. 按 `Enter` 提交这次文字编辑。
+3. 左上角如果显示“未保存”，说明内容还没有写入文件。
+4. 点击左上角“保存”，或者按 `Ctrl+S`。
+5. 左上角显示“已保存”，说明内容已经写入 `board-state.json`。
 
-- 数据导入和保存
-- 更完整的学习模式
-- 更精确的 3D billboard 排序和遮挡处理
+## 退出这一轮
+
+1. 关闭浏览器里的网页。
+2. 回到 PowerShell。
+3. 按 `Ctrl+C` 停止服务器。
+4. 如果回到类似下面的提示符，说明服务器已经成功关闭：
+
+```powershell
+PS C:\E drive\Dropbox\Study\myproject\project 25_05_09 BA 2-3>
+```
+
+如果 PowerShell 询问是否终止批处理作业，输入 `Y` 并回车。
+
+## 下一轮继续
+
+1. 重新进入项目目录。
+2. 重新运行：
+
+```powershell
+node .\server.js
+```
+
+3. 再次打开：
+
+```text
+http://localhost:3000/
+```
+
+你应该能看到上一轮保存过的白板内容。
+
+## 常用快捷键
+
+- `Ctrl+S`: 保存
+- `Ctrl+Z`: 退一步
+- `Ctrl+Y`: 进一步
+- `Ctrl+Shift+Z`: 进一步

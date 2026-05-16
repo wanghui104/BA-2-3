@@ -1,4 +1,4 @@
-const gridSpec = {
+﻿const gridSpec = {
   width: 3,
   height: 2,
   depth: 2,
@@ -23,10 +23,26 @@ const CELL_SIZE_LIMITS = {
 const TEXT_SIZE_MIN = 2;
 const TEXT_SIZE_MAX = 24;
 const GAP_MIN = gridSpec.gap;
+const HISTORY_LIMIT = 10;
+const SAVE_ENDPOINT = "/api/state";
 const ROW_RULES = {
   GLOBAL_MAX: "global-max",
   LOCAL: "local"
 };
+const BLOCK_TYPES = {
+  HEADING: "heading",
+  PARAGRAPH: "paragraph",
+  BULLET: "bullet",
+  NUMBERED: "numbered"
+};
+const INLINE_MARK_TYPES = new Set(["superscript", "subscript", "bold", "italic", "underline", "color", "fontSize"]);
+const FORMAT_SIZE_MIN = 8;
+const FORMAT_SIZE_MAX = 24;
+const FORMAT_SIZE_STEP = 1;
+const INDENT_MIN = 0;
+const INDENT_MAX = 4;
+const BULLET_LIST_STYLES = ["disc", "circle", "diamond"];
+const NUMBERED_LIST_STYLES = ["decimal", "lower-alpha", "lower-roman"];
 
 const sampleTexts = [
   "核心论点\n定义问题\n限定范围\n提出判断",
@@ -54,7 +70,7 @@ const state = {
     heights: Array.from({ length: gridSpec.height }, () => gridSpec.cellSize.height),
     depths: Array.from({ length: gridSpec.depth }, () => gridSpec.cellSize.depth)
   },
-  boardTexts: {}
+  boards: {}
 };
 
 let cells = [];
@@ -78,10 +94,15 @@ const widthInput = document.querySelector("#widthInput");
 const heightInput = document.querySelector("#heightInput");
 const depthInput = document.querySelector("#depthInput");
 const structureReadout = document.querySelector("#structureReadout");
-const boardEditorGrid = document.querySelector("#boardEditorGrid");
-const fillDefaultsButton = document.querySelector("#fillDefaultsButton");
-const tabButtons = document.querySelectorAll(".tab-button");
-const pages = document.querySelectorAll(".page");
+const undoButton = document.querySelector("#undoButton");
+const redoButton = document.querySelector("#redoButton");
+const saveButton = document.querySelector("#saveButton");
+const saveStatus = document.querySelector("#saveStatus");
+const minimizeBoardsButton = document.querySelector("#minimizeBoardsButton");
+const maximizeBoardsButton = document.querySelector("#maximizeBoardsButton");
+const minimizeBoxesButton = document.querySelector("#minimizeBoxesButton");
+const maximizeBoxesButton = document.querySelector("#maximizeBoxesButton");
+const topFormatToolbar = document.querySelector("#topFormatToolbar");
 
 const viewState = {
   rotationX: -18,
@@ -93,11 +114,28 @@ const viewState = {
   markersVisible: false,
   textSize: 10,
   selectedId: null,
+  selectedIds: new Set(),
   dragging: false,
   moved: false,
   lastX: 0,
   lastY: 0
 };
+
+const historyState = {
+  undoStack: [],
+  redoStack: [],
+  isRestoring: false
+};
+
+const saveState = {
+  isDirty: false,
+  isSaving: false,
+  lastSavedAt: null,
+  loadError: null
+};
+
+let spacingChangeSnapshot = null;
+let textSizeChangeSnapshot = null;
 
 function getBoardKey(x, y, z) {
   return `${x}-${y}-${z}`;
@@ -117,6 +155,245 @@ function getDefaultText(index) {
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
+}
+
+function cloneData(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function createHistorySnapshot() {
+  return {
+    dimensions: cloneData(state.dimensions),
+    sliceSizes: cloneData(state.sliceSizes),
+    boards: cloneData(state.boards),
+    view: {
+      gap: viewState.gap,
+      rowRule: viewState.rowRule,
+      detailPreview: viewState.detailPreview,
+      markersVisible: viewState.markersVisible,
+      textSize: viewState.textSize
+    }
+  };
+}
+
+function areSnapshotsEqual(first, second) {
+  return JSON.stringify(first) === JSON.stringify(second);
+}
+
+function updateHistoryButtons() {
+  undoButton.disabled = historyState.undoStack.length === 0;
+  redoButton.disabled = historyState.redoStack.length === 0;
+}
+
+function updateSaveStatus({ variant = null, message = null } = {}) {
+  saveButton.disabled = saveState.isSaving;
+  saveStatus.classList.toggle("is-dirty", saveState.isDirty && variant !== "error");
+  saveStatus.classList.toggle("is-error", variant === "error");
+
+  if (message) {
+    saveStatus.textContent = message;
+    return;
+  }
+
+  if (saveState.isSaving) {
+    saveStatus.textContent = "保存中";
+    return;
+  }
+
+  saveStatus.textContent = saveState.isDirty ? "未保存" : "已保存";
+}
+
+function markDirty() {
+  saveState.isDirty = true;
+  updateSaveStatus();
+}
+
+function commitHistorySnapshot(beforeSnapshot) {
+  if (historyState.isRestoring || !beforeSnapshot) {
+    return;
+  }
+
+  const afterSnapshot = createHistorySnapshot();
+  if (areSnapshotsEqual(beforeSnapshot, afterSnapshot)) {
+    updateHistoryButtons();
+    return;
+  }
+
+  historyState.undoStack.push(beforeSnapshot);
+  if (historyState.undoStack.length > HISTORY_LIMIT) {
+    historyState.undoStack.shift();
+  }
+  historyState.redoStack = [];
+  updateHistoryButtons();
+  markDirty();
+}
+
+function applyHistorySnapshot(snapshot) {
+  historyState.isRestoring = true;
+  state.dimensions = cloneData(snapshot.dimensions);
+  state.sliceSizes = cloneData(snapshot.sliceSizes);
+  state.boards = cloneData(snapshot.boards);
+  gridSpec.width = state.dimensions.width;
+  gridSpec.height = state.dimensions.height;
+  gridSpec.depth = state.dimensions.depth;
+  viewState.gap = snapshot.view.gap;
+  viewState.rowRule = snapshot.view.rowRule;
+  viewState.detailPreview = snapshot.view.detailPreview;
+  viewState.markersVisible = snapshot.view.markersVisible;
+  viewState.textSize = snapshot.view.textSize;
+  viewState.selectedId = null;
+  viewState.selectedIds.clear();
+
+  rowRuleSelect.value = viewState.rowRule;
+  detailPreviewSelect.value = viewState.detailPreview ? "on" : "off";
+  markerVisibilitySelect.value = viewState.markersVisible ? "on" : "off";
+  updateShapeControls();
+  renderCells();
+  renderConfig();
+  selectionText.textContent = "尚未选择。";
+  updateWindowControlButtons();
+  historyState.isRestoring = false;
+  updateHistoryButtons();
+}
+
+function undoHistoryStep() {
+  if (editingState) {
+    stopEditing({ commit: true });
+  }
+
+  if (historyState.undoStack.length === 0) {
+    return;
+  }
+
+  const currentSnapshot = createHistorySnapshot();
+  const previousSnapshot = historyState.undoStack.pop();
+  historyState.redoStack.push(currentSnapshot);
+  applyHistorySnapshot(previousSnapshot);
+  markDirty();
+}
+
+function redoHistoryStep() {
+  if (editingState) {
+    stopEditing({ commit: true });
+  }
+
+  if (historyState.redoStack.length === 0) {
+    return;
+  }
+
+  const currentSnapshot = createHistorySnapshot();
+  const nextSnapshot = historyState.redoStack.pop();
+  historyState.undoStack.push(currentSnapshot);
+  if (historyState.undoStack.length > HISTORY_LIMIT) {
+    historyState.undoStack.shift();
+  }
+  applyHistorySnapshot(nextSnapshot);
+  markDirty();
+}
+
+function createPersistedState() {
+  return {
+    schemaVersion: 1,
+    savedAt: new Date().toISOString(),
+    dimensions: cloneData(state.dimensions),
+    sliceSizes: cloneData(state.sliceSizes),
+    view: {
+      gap: viewState.gap,
+      rowRule: viewState.rowRule,
+      detailPreview: viewState.detailPreview,
+      markersVisible: viewState.markersVisible,
+      textSize: viewState.textSize
+    },
+    boards: cloneData(state.boards)
+  };
+}
+
+function applyPersistedState(payload) {
+  if (!payload) {
+    ensureBoards();
+    return;
+  }
+
+  state.dimensions = cloneData(payload.dimensions || state.dimensions);
+  state.sliceSizes = cloneData(payload.sliceSizes || state.sliceSizes);
+  state.boards = cloneData(payload.boards || {});
+
+  if (payload.boardTexts && !payload.boards) {
+    Object.entries(payload.boardTexts).forEach(([key, text]) => {
+      state.boards[key] = createBoardFromText(key, text);
+    });
+  }
+
+  gridSpec.width = state.dimensions.width;
+  gridSpec.height = state.dimensions.height;
+  gridSpec.depth = state.dimensions.depth;
+  syncSliceSizesToDimensions();
+
+  if (payload.view) {
+    viewState.gap = typeof payload.view.gap === "number" ? payload.view.gap : viewState.gap;
+    viewState.rowRule = payload.view.rowRule || viewState.rowRule;
+    viewState.detailPreview = Boolean(payload.view.detailPreview);
+    viewState.markersVisible = Boolean(payload.view.markersVisible);
+    viewState.textSize = typeof payload.view.textSize === "number" ? payload.view.textSize : viewState.textSize;
+  }
+
+  ensureBoards();
+}
+
+async function loadSavedState() {
+  try {
+    const response = await fetch(SAVE_ENDPOINT, { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error("Load request failed.");
+    }
+
+    const payload = await response.json();
+    applyPersistedState(payload);
+    saveState.isDirty = false;
+    saveState.loadError = null;
+  } catch (error) {
+    ensureBoards();
+    saveState.loadError = error;
+    saveState.isDirty = false;
+    updateSaveStatus({ variant: "error", message: "未连接保存" });
+    return;
+  }
+
+  updateSaveStatus();
+}
+
+async function saveBoardState() {
+  if (editingState) {
+    stopEditing({ commit: true });
+  }
+
+  saveState.isSaving = true;
+  updateSaveStatus();
+  let saved = false;
+
+  try {
+    const payload = createPersistedState();
+    const response = await fetch(SAVE_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      throw new Error("Save request failed.");
+    }
+
+    saveState.isDirty = false;
+    saveState.lastSavedAt = payload.savedAt;
+    saved = true;
+  } catch (error) {
+    saveState.isDirty = true;
+  } finally {
+    saveState.isSaving = false;
+    updateSaveStatus(saved ? { message: "已保存" } : { variant: "error", message: "保存失败" });
+  }
 }
 
 function getMaxGap() {
@@ -220,13 +497,201 @@ function getTextLineCount(text) {
   return Math.max(1, String(text || "").split(/\r?\n/).length);
 }
 
-function ensureBoardTexts({ reset = false } = {}) {
+function createTextBlocks(text) {
+  const lines = String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim());
+  const safeLines = lines.length > 0 ? lines : [""];
+
+  return safeLines.map((line, index) => ({
+    id: `block-${index + 1}`,
+    type: index === 0 ? BLOCK_TYPES.HEADING : BLOCK_TYPES.BULLET,
+    indent: 0,
+    listStyle: index === 0 ? null : "disc",
+    text: line,
+    marks: []
+  }));
+}
+
+function createBoardFromText(key, text) {
+  return {
+    id: key,
+    blocks: createTextBlocks(text),
+    links: [],
+    hidden: false,
+    boxHidden: false
+  };
+}
+
+function normalizeBlockType(type, index) {
+  if (Object.values(BLOCK_TYPES).includes(type)) {
+    return type;
+  }
+
+  return index === 0 ? BLOCK_TYPES.HEADING : BLOCK_TYPES.BULLET;
+}
+
+function isListBlockType(type) {
+  return type === BLOCK_TYPES.BULLET || type === BLOCK_TYPES.NUMBERED;
+}
+
+function getDefaultListStyle(type, indent = 0) {
+  if (type === BLOCK_TYPES.NUMBERED) {
+    return NUMBERED_LIST_STYLES[Math.min(indent, NUMBERED_LIST_STYLES.length - 1)];
+  }
+
+  if (type === BLOCK_TYPES.BULLET) {
+    return BULLET_LIST_STYLES[Math.min(indent, BULLET_LIST_STYLES.length - 1)];
+  }
+
+  return null;
+}
+
+function normalizeListStyle(type, listStyle, indent = 0) {
+  if (type === BLOCK_TYPES.BULLET && BULLET_LIST_STYLES.includes(listStyle)) {
+    return listStyle;
+  }
+
+  if (type === BLOCK_TYPES.NUMBERED && NUMBERED_LIST_STYLES.includes(listStyle)) {
+    return listStyle;
+  }
+
+  return getDefaultListStyle(type, indent);
+}
+
+function normalizeHexColor(value) {
+  const color = String(value || "").trim();
+  return /^#[0-9a-f]{6}$/i.test(color) ? color.toLowerCase() : null;
+}
+
+function rgbToHex(value) {
+  const match = String(value || "").match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+  if (!match) {
+    return normalizeHexColor(value);
+  }
+
+  return `#${match.slice(1, 4)
+    .map((part) => clamp(Number.parseInt(part, 10) || 0, 0, 255).toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
+function normalizeMark(mark, textLength) {
+  if (!mark || !INLINE_MARK_TYPES.has(mark.type)) {
+    return null;
+  }
+
+  const start = clamp(Number.parseInt(mark.start, 10) || 0, 0, textLength);
+  const end = clamp(Number.parseInt(mark.end, 10) || 0, 0, textLength);
+  if (end <= start) {
+    return null;
+  }
+
+  if (mark.type === "color") {
+    const color = normalizeHexColor(mark.value) || rgbToHex(mark.value);
+    return color ? { type: mark.type, start, end, value: color } : null;
+  }
+
+  if (mark.type === "fontSize") {
+    const fontSize = clamp(Number.parseInt(mark.value, 10) || viewState.textSize, FORMAT_SIZE_MIN, FORMAT_SIZE_MAX);
+    return { type: mark.type, start, end, value: fontSize };
+  }
+
+  return { type: mark.type, start, end };
+}
+
+function normalizeBlock(block, index) {
+  const text = String(block?.text || "");
+  const type = normalizeBlockType(block?.type, index);
+  const indent = clamp(Number.parseInt(block?.indent, 10) || 0, INDENT_MIN, INDENT_MAX);
+  const marks = Array.isArray(block?.marks)
+    ? block.marks.map((mark) => normalizeMark(mark, text.length)).filter(Boolean)
+    : [];
+  const normalizedBlock = {
+    id: block?.id || `block-${index + 1}`,
+    type,
+    indent,
+    text,
+    marks
+  };
+
+  if (isListBlockType(type)) {
+    normalizedBlock.listStyle = normalizeListStyle(type, block?.listStyle, indent);
+  }
+
+  return normalizedBlock;
+}
+
+function normalizeBoard(key, board) {
+  if (typeof board === "string") {
+    return createBoardFromText(key, board);
+  }
+
+  if (!board || !Array.isArray(board.blocks)) {
+    return createBoardFromText(key, "");
+  }
+
+  return {
+    id: board.id || key,
+    blocks: board.blocks.map((block, index) => normalizeBlock(block, index)),
+    links: Array.isArray(board.links) ? board.links : [],
+    hidden: Boolean(board.hidden),
+    boxHidden: Boolean(board.boxHidden)
+  };
+}
+
+function getBoardBlocks(key) {
+  const board = normalizeBoard(key, state.boards[key]);
+  return board.blocks;
+}
+
+function getBoardText(key) {
+  return getBoardBlocks(key).map((block) => block.text).join("\n");
+}
+
+function getBoardBlockCount(key) {
+  return Math.max(1, getBoardBlocks(key).length);
+}
+
+function setBoardText(key, text) {
+  const previousBoard = normalizeBoard(key, state.boards[key]);
+  const nextBoard = createBoardFromText(key, text);
+  nextBoard.links = previousBoard.links;
+  nextBoard.hidden = previousBoard.hidden;
+  nextBoard.boxHidden = previousBoard.boxHidden;
+  state.boards[key] = nextBoard;
+}
+
+function setBoardBlocks(key, blocks) {
+  const previousBoard = normalizeBoard(key, state.boards[key]);
+  const safeBlocks = Array.isArray(blocks) && blocks.length > 0
+    ? blocks.map((block, index) => normalizeBlock(block, index))
+    : createTextBlocks("");
+  state.boards[key] = {
+    id: previousBoard.id || key,
+    blocks: safeBlocks,
+    links: previousBoard.links,
+    hidden: previousBoard.hidden,
+    boxHidden: previousBoard.boxHidden
+  };
+}
+
+function getBoardLines(key) {
+  return getTextLines(getBoardText(key));
+}
+
+function getBoardLineCount(key) {
+  return getTextLineCount(getBoardText(key));
+}
+
+function ensureBoards({ reset = false } = {}) {
   for (let z = 0; z < state.dimensions.depth; z += 1) {
     for (let y = 0; y < state.dimensions.height; y += 1) {
       for (let x = 0; x < state.dimensions.width; x += 1) {
         const key = getBoardKey(x, y, z);
-        if (reset || typeof state.boardTexts[key] !== "string") {
-          state.boardTexts[key] = getDefaultText(getBoardIndex(x, y, z));
+        if (reset || !state.boards[key]) {
+          state.boards[key] = createBoardFromText(key, getDefaultText(getBoardIndex(x, y, z)));
+        } else {
+          state.boards[key] = normalizeBoard(key, state.boards[key]);
         }
       }
     }
@@ -242,14 +707,17 @@ function getCellById(cellId) {
 }
 
 function buildCells() {
-  ensureBoardTexts();
+  ensureBoards();
   const nextCells = [];
 
   for (let z = 0; z < state.dimensions.depth; z += 1) {
     for (let y = 0; y < state.dimensions.height; y += 1) {
       for (let x = 0; x < state.dimensions.width; x += 1) {
         const index = getBoardIndex(x, y, z);
-        const lines = getTextLines(state.boardTexts[getBoardKey(x, y, z)]);
+        const key = getBoardKey(x, y, z);
+        const board = normalizeBoard(key, state.boards[key]);
+        const blocks = board.blocks;
+        const lines = blocks.map((block) => block.text);
         const title = lines[0] || `板子 ${String(index + 1).padStart(2, "0")}`;
         const points = lines.slice(1);
 
@@ -260,9 +728,12 @@ function buildCells() {
           content: {
             title,
             type: "板子",
-            points
+            points,
+            blocks
           },
           opacity: 1,
+          hidden: board.hidden,
+          boxHidden: board.boxHidden,
           links: []
         });
       }
@@ -288,23 +759,29 @@ function buildCells() {
 function getGlobalNoteRowCount() {
   return Math.max(
     1,
-    ...cells.map((cell) => getTextLineCount(state.boardTexts[getBoardKeyFromCoord(cell.coord)] || ""))
+    ...cells.map((cell) => getBoardBlockCount(getBoardKeyFromCoord(cell.coord)))
   );
 }
 
 function getNoteRowCount(cell) {
   if (viewState.rowRule === ROW_RULES.LOCAL) {
-    return getTextLineCount(state.boardTexts[getBoardKeyFromCoord(cell.coord)] || "");
+    return getBoardBlockCount(getBoardKeyFromCoord(cell.coord));
   }
 
   return getGlobalNoteRowCount();
 }
 
-function getNoteRows(cell) {
-  const rows = [cell.content.title, ...cell.content.points];
+function getNoteBlocks(cell) {
+  const rows = cell.content.blocks.map((block, index) => normalizeBlock(block, index));
   const rowCount = getNoteRowCount(cell);
   while (rows.length < rowCount) {
-    rows.push("");
+    rows.push({
+      id: `empty-${rows.length + 1}`,
+      type: BLOCK_TYPES.PARAGRAPH,
+      indent: 0,
+      text: "",
+      marks: []
+    });
   }
   return rows.slice(0, rowCount);
 }
@@ -314,16 +791,675 @@ function getFullText(cell) {
   return `${cell.label}: ${detail}`;
 }
 
+function appendMarkedText(parent, block) {
+  if (!block.text) {
+    return;
+  }
+
+  const characters = Array.from(block.text, (char) => ({
+    char,
+    bold: false,
+    italic: false,
+    underline: false,
+    superscript: false,
+    subscript: false,
+    color: null,
+    fontSize: null
+  }));
+
+  block.marks.forEach((mark) => {
+    const start = clamp(mark.start, 0, characters.length);
+    const end = clamp(mark.end, start, characters.length);
+    for (let index = start; index < end; index += 1) {
+      if (mark.type === "color") {
+        characters[index].color = mark.value;
+      } else if (mark.type === "fontSize") {
+        characters[index].fontSize = mark.value;
+      } else if (mark.type in characters[index]) {
+        characters[index][mark.type] = true;
+      }
+    }
+  });
+
+  function getStyleKey(item) {
+    return JSON.stringify({
+      bold: item.bold,
+      italic: item.italic,
+      underline: item.underline,
+      superscript: item.superscript,
+      subscript: item.subscript,
+      color: item.color,
+      fontSize: item.fontSize
+    });
+  }
+
+  function appendRun(text, style) {
+    if (!style.bold && !style.italic && !style.underline && !style.superscript && !style.subscript && !style.color && !style.fontSize) {
+      parent.appendChild(document.createTextNode(text));
+      return;
+    }
+
+    const element = document.createElement(style.superscript ? "sup" : style.subscript ? "sub" : "span");
+    parent.appendChild(element);
+    element.textContent = text;
+    if (style.bold) {
+      element.style.fontWeight = "800";
+    }
+    if (style.italic) {
+      element.style.fontStyle = "italic";
+    }
+    if (style.underline) {
+      element.style.textDecoration = "underline";
+    }
+    if (style.color) {
+      element.style.color = style.color;
+    }
+    if (style.fontSize) {
+      element.style.fontSize = `${style.fontSize}px`;
+    }
+  }
+
+  let runText = "";
+  let runStyle = null;
+  let runKey = "";
+  characters.forEach((item) => {
+    const nextKey = getStyleKey(item);
+    if (runText && nextKey !== runKey) {
+      appendRun(runText, runStyle);
+      runText = "";
+    }
+
+    runText += item.char;
+    runStyle = item;
+    runKey = nextKey;
+  });
+
+  if (runText) {
+    appendRun(runText, runStyle);
+  }
+}
+
+function renderBlockContent(parent, block) {
+  parent.textContent = "";
+  appendMarkedText(parent, block);
+  if (!block.text) {
+    parent.appendChild(document.createElement("br"));
+  }
+}
+
+function createEditorBlock(block, index) {
+  const element = document.createElement("div");
+  element.className = "editor-block";
+  element.contentEditable = "true";
+  element.dataset.type = block.type;
+  element.dataset.indent = String(block.indent);
+  if (block.listStyle) {
+    element.dataset.listStyle = block.listStyle;
+  }
+  element.dataset.blockId = block.id || `block-${index + 1}`;
+  element.spellcheck = false;
+  renderBlockContent(element, block);
+  return element;
+}
+
+function createEditorBlocks(blocks) {
+  const fragment = document.createDocumentFragment();
+  blocks.forEach((block, index) => {
+    fragment.appendChild(createEditorBlock(block, index));
+  });
+  return fragment;
+}
+
+function getEditorBlockFromEventTarget(target) {
+  return target?.closest?.(".editor-block") || null;
+}
+
+function getActiveEditorBlock(editor) {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    return editor.querySelector(".editor-block");
+  }
+
+  const node = selection.anchorNode?.nodeType === Node.TEXT_NODE
+    ? selection.anchorNode.parentElement
+    : selection.anchorNode;
+  return node?.closest?.(".editor-block") || editor.querySelector(".editor-block");
+}
+
+function placeCaretAtEnd(element) {
+  element.focus();
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  range.collapse(false);
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function getTextAndMarksFromEditorBlock(element) {
+  let text = "";
+  const marks = [];
+
+  function pushActiveMarks(activeStyle, start, end) {
+    if (end <= start) {
+      return;
+    }
+
+    ["bold", "italic", "underline", "superscript", "subscript"].forEach((type) => {
+      if (activeStyle[type]) {
+        marks.push({ type, start, end });
+      }
+    });
+    if (activeStyle.color) {
+      marks.push({ type: "color", start, end, value: activeStyle.color });
+    }
+    if (activeStyle.fontSize) {
+      marks.push({ type: "fontSize", start, end, value: activeStyle.fontSize });
+    }
+  }
+
+  function walk(node, activeStyle = {}) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const start = text.length;
+      text += node.nodeValue || "";
+      const end = text.length;
+      pushActiveMarks(activeStyle, start, end);
+      return;
+    }
+
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      return;
+    }
+
+    const tagName = node.tagName.toLowerCase();
+    const nodeStyle = node.style || {};
+    const nextStyle = { ...activeStyle };
+    if (tagName === "b" || tagName === "strong" || Number.parseInt(nodeStyle.fontWeight, 10) >= 600) {
+      nextStyle.bold = true;
+    }
+    if (tagName === "i" || tagName === "em" || nodeStyle.fontStyle === "italic") {
+      nextStyle.italic = true;
+    }
+    if (tagName === "u" || String(nodeStyle.textDecorationLine || nodeStyle.textDecoration || "").includes("underline")) {
+      nextStyle.underline = true;
+    }
+    if (tagName === "sup") {
+      nextStyle.superscript = true;
+    }
+    if (tagName === "sub") {
+      nextStyle.subscript = true;
+    }
+    const color = node.getAttribute("color") || nodeStyle.color;
+    const normalizedColor = normalizeHexColor(color) || rgbToHex(color);
+    if (normalizedColor) {
+      nextStyle.color = normalizedColor;
+    }
+    const fontSize = Number.parseInt(nodeStyle.fontSize || "", 10);
+    if (Number.isFinite(fontSize)) {
+      nextStyle.fontSize = clamp(fontSize, FORMAT_SIZE_MIN, FORMAT_SIZE_MAX);
+    }
+    node.childNodes.forEach((child) => walk(child, nextStyle));
+  }
+
+  element.childNodes.forEach((child) => walk(child));
+  return { text, marks };
+}
+
+function getEditorBlocks(editor) {
+  return [...editor.querySelectorAll(".editor-block")].map((element, index) => {
+    const { text, marks } = getTextAndMarksFromEditorBlock(element);
+    const type = normalizeBlockType(element.dataset.type, index);
+    const indent = clamp(Number.parseInt(element.dataset.indent, 10) || 0, INDENT_MIN, INDENT_MAX);
+    const block = {
+      id: element.dataset.blockId || `block-${index + 1}`,
+      type,
+      indent,
+      text: text.trim(),
+      marks
+    };
+
+    if (isListBlockType(type)) {
+      block.listStyle = normalizeListStyle(type, element.dataset.listStyle, indent);
+    }
+
+    return block;
+  });
+}
+
+function updateEditorStateFromDom(editor, key) {
+  updateEditorMarkers(editor);
+  setBoardBlocks(key, getEditorBlocks(editor));
+  syncEditingRows();
+}
+
+function setActiveBlockType(editor, type, listStyle = null) {
+  const block = getActiveEditorBlock(editor);
+  if (!block) {
+    return;
+  }
+
+  block.dataset.type = type;
+  if (isListBlockType(type)) {
+    block.dataset.listStyle = normalizeListStyle(type, listStyle || block.dataset.listStyle, Number.parseInt(block.dataset.indent, 10) || 0);
+  } else {
+    delete block.dataset.listStyle;
+  }
+  updateEditorStateFromDom(editor, editingState.key);
+}
+
+function shiftActiveBlockIndent(editor, delta) {
+  const block = getActiveEditorBlock(editor);
+  if (!block) {
+    return;
+  }
+
+  const current = Number.parseInt(block.dataset.indent, 10) || 0;
+  const nextIndent = clamp(current + delta, INDENT_MIN, INDENT_MAX);
+  block.dataset.indent = String(nextIndent);
+  if (isListBlockType(block.dataset.type)) {
+    block.dataset.listStyle = getDefaultListStyle(block.dataset.type, nextIndent);
+  }
+  updateEditorStateFromDom(editor, editingState.key);
+}
+
+function getEditorSelection(editor) {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    return null;
+  }
+
+  const range = selection.getRangeAt(0);
+  const container = range.commonAncestorContainer.nodeType === Node.TEXT_NODE
+    ? range.commonAncestorContainer.parentElement
+    : range.commonAncestorContainer;
+  return editor.contains(container) ? selection : null;
+}
+
+function selectActiveBlockWhenCollapsed(editor) {
+  const selection = getEditorSelection(editor);
+  const activeBlock = getActiveEditorBlock(editor);
+  if (!activeBlock) {
+    return;
+  }
+
+  if (selection && !selection.isCollapsed) {
+    return;
+  }
+
+  const range = document.createRange();
+  range.selectNodeContents(activeBlock);
+  const nextSelection = window.getSelection();
+  nextSelection.removeAllRanges();
+  nextSelection.addRange(range);
+}
+
+function replaceFontSizeElements(editor, size) {
+  editor.querySelectorAll("font[size='7']").forEach((font) => {
+    const span = document.createElement("span");
+    span.style.fontSize = `${size}px`;
+    while (font.firstChild) {
+      span.appendChild(font.firstChild);
+    }
+    font.replaceWith(span);
+  });
+}
+
+function applyFontSize(editor, size) {
+  const safeSize = clamp(Number.parseInt(size, 10) || viewState.textSize, FORMAT_SIZE_MIN, FORMAT_SIZE_MAX);
+  selectActiveBlockWhenCollapsed(editor);
+  document.execCommand("fontSize", false, "7");
+  replaceFontSizeElements(editor, safeSize);
+}
+
+function getCurrentFormatSize(editor) {
+  const selection = getEditorSelection(editor);
+  const node = selection?.anchorNode?.nodeType === Node.TEXT_NODE
+    ? selection.anchorNode.parentElement
+    : selection?.anchorNode;
+  const styledNode = node?.closest?.("[style*='font-size']");
+  const inlineSize = Number.parseInt(styledNode?.style?.fontSize || "", 10);
+  if (Number.isFinite(inlineSize)) {
+    return clamp(inlineSize, FORMAT_SIZE_MIN, FORMAT_SIZE_MAX);
+  }
+
+  return clamp(viewState.textSize, FORMAT_SIZE_MIN, FORMAT_SIZE_MAX);
+}
+
+function applyTextColor(editor, color) {
+  const safeColor = normalizeHexColor(color) || "#1c2430";
+  selectActiveBlockWhenCollapsed(editor);
+  document.execCommand("foreColor", false, safeColor);
+}
+
+function runFormatAction(action, listStyle = null) {
+  if (!editingState) {
+    return;
+  }
+
+  const { editor, key } = editingState;
+  getActiveEditorBlock(editor)?.focus();
+
+  if (action === "bold" || action === "italic" || action === "underline" || action === "superscript" || action === "subscript") {
+    selectActiveBlockWhenCollapsed(editor);
+    document.execCommand(action);
+  } else if (action === "increase-size" || action === "decrease-size") {
+    const delta = action === "increase-size" ? FORMAT_SIZE_STEP : -FORMAT_SIZE_STEP;
+    applyFontSize(editor, getCurrentFormatSize(editor) + delta);
+  } else if (action === "clear-format") {
+    selectActiveBlockWhenCollapsed(editor);
+    document.execCommand("removeFormat");
+  } else if (action === "heading") {
+    setActiveBlockType(editor, BLOCK_TYPES.HEADING);
+  } else if (action === "paragraph") {
+    setActiveBlockType(editor, BLOCK_TYPES.PARAGRAPH);
+  } else if (action === "bullet") {
+    setActiveBlockType(editor, BLOCK_TYPES.BULLET, listStyle);
+  } else if (action === "numbered") {
+    setActiveBlockType(editor, BLOCK_TYPES.NUMBERED, listStyle);
+  } else if (action === "outdent") {
+    shiftActiveBlockIndent(editor, -1);
+  } else if (action === "indent") {
+    shiftActiveBlockIndent(editor, 1);
+  }
+
+  updateEditorStateFromDom(editor, key);
+  updateFormatToolbarState();
+}
+
+function setFormatSize(size) {
+  if (!editingState) {
+    return;
+  }
+
+  const { editor, key } = editingState;
+  getActiveEditorBlock(editor)?.focus();
+  applyFontSize(editor, size);
+  updateEditorStateFromDom(editor, key);
+  updateFormatToolbarState();
+}
+
+function setFormatColor(color) {
+  if (!editingState) {
+    return;
+  }
+
+  const { editor, key } = editingState;
+  getActiveEditorBlock(editor)?.focus();
+  applyTextColor(editor, color);
+  updateEditorStateFromDom(editor, key);
+  updateFormatToolbarState();
+}
+
+function wireFormatToolbar(toolbar) {
+  if (!toolbar) {
+    return;
+  }
+
+  ["pointerdown", "pointerup", "click", "dblclick", "mousedown", "mouseup"].forEach((eventName) => {
+    toolbar.addEventListener(eventName, (event) => event.stopPropagation());
+  });
+
+  toolbar.querySelectorAll("[data-format-action]").forEach((button) => {
+    button.addEventListener("pointerdown", (event) => event.preventDefault());
+    button.addEventListener("click", () => runFormatAction(button.dataset.formatAction, button.dataset.listStyle || null));
+  });
+  toolbar.querySelectorAll("[data-format-size]").forEach((select) => {
+    select.addEventListener("pointerdown", (event) => event.stopPropagation());
+    select.addEventListener("change", () => setFormatSize(select.value));
+  });
+  toolbar.querySelectorAll("[data-format-color]").forEach((input) => {
+    input.addEventListener("pointerdown", (event) => event.stopPropagation());
+    input.addEventListener("input", () => {
+      input.closest(".format-color-control")?.style.setProperty("color", input.value);
+      setFormatColor(input.value);
+    });
+  });
+}
+
+function createFloatingFormatToolbar() {
+  const toolbar = topFormatToolbar.cloneNode(true);
+  toolbar.id = "";
+  toolbar.classList.remove("top-format-toolbar");
+  toolbar.classList.add("floating-format-toolbar");
+  wireFormatToolbar(toolbar);
+  return toolbar;
+}
+
+function updateFormatToolbarState() {
+  const disabled = !editingState;
+  document.querySelectorAll(".text-format-toolbar [data-format-action]").forEach((button) => {
+    button.disabled = disabled;
+  });
+  document.querySelectorAll(".text-format-toolbar [data-format-size], .text-format-toolbar [data-format-color]").forEach((control) => {
+    control.disabled = disabled;
+  });
+}
+
+function insertEditorBlockAfter(editor, currentBlock) {
+  const blocks = [...editor.querySelectorAll(".editor-block")];
+  const index = blocks.indexOf(currentBlock);
+  const nextBlock = createEditorBlock({
+    id: `block-${Date.now()}`,
+    type: currentBlock?.dataset.type || BLOCK_TYPES.BULLET,
+    indent: Number.parseInt(currentBlock?.dataset.indent, 10) || 0,
+    listStyle: currentBlock?.dataset.listStyle || null,
+    text: "",
+    marks: []
+  }, index + 1);
+
+  currentBlock.after(nextBlock);
+  updateEditorStateFromDom(editor, editingState.key);
+  placeCaretAtEnd(nextBlock);
+}
+
+function getBulletMarker(listStyle) {
+  return {
+    disc: "•",
+    circle: "○",
+    diamond: "◆"
+  }[listStyle] || "•";
+}
+
+function toAlphaNumber(value) {
+  let current = value;
+  let result = "";
+  while (current > 0) {
+    current -= 1;
+    result = String.fromCharCode(97 + (current % 26)) + result;
+    current = Math.floor(current / 26);
+  }
+  return result || "a";
+}
+
+function toRomanNumber(value) {
+  const romanMap = [
+    [10, "x"],
+    [9, "ix"],
+    [5, "v"],
+    [4, "iv"],
+    [1, "i"]
+  ];
+  let current = value;
+  let result = "";
+  romanMap.forEach(([amount, symbol]) => {
+    while (current >= amount) {
+      result += symbol;
+      current -= amount;
+    }
+  });
+  return result || "i";
+}
+
+function getNumberMarker(value, listStyle) {
+  if (listStyle === "lower-alpha") {
+    return `${toAlphaNumber(value)}.`;
+  }
+
+  if (listStyle === "lower-roman") {
+    return `${toRomanNumber(value)}.`;
+  }
+
+  return `${value}.`;
+}
+
+function applyListMarkerData(element, block, numberCounters = null) {
+  element.dataset.type = block.type;
+  element.dataset.indent = String(block.indent);
+  delete element.dataset.marker;
+  delete element.dataset.listStyle;
+
+  if (block.type === BLOCK_TYPES.NUMBERED) {
+    const listStyle = normalizeListStyle(block.type, block.listStyle, block.indent);
+    if (numberCounters) {
+      numberCounters[block.indent] += 1;
+      numberCounters.fill(0, block.indent + 1);
+      element.dataset.marker = getNumberMarker(numberCounters[block.indent], listStyle);
+    } else {
+      element.dataset.marker = getNumberMarker(1, listStyle);
+    }
+    element.dataset.listStyle = listStyle;
+  } else if (block.type === BLOCK_TYPES.BULLET) {
+    const listStyle = normalizeListStyle(block.type, block.listStyle, block.indent);
+    if (numberCounters) {
+      numberCounters.fill(0, block.indent);
+    }
+    element.dataset.marker = getBulletMarker(listStyle);
+    element.dataset.listStyle = listStyle;
+  }
+}
+
+function updateEditorMarkers(editor) {
+  const numberCounters = Array.from({ length: INDENT_MAX + 1 }, () => 0);
+  editor.querySelectorAll(".editor-block").forEach((element, index) => {
+    const type = normalizeBlockType(element.dataset.type, index);
+    const indent = clamp(Number.parseInt(element.dataset.indent, 10) || 0, INDENT_MIN, INDENT_MAX);
+    applyListMarkerData(element, {
+      type,
+      indent,
+      listStyle: element.dataset.listStyle
+    }, numberCounters);
+  });
+}
+
 function selectCell(cell) {
   viewState.selectedId = cell.id;
+  viewState.selectedIds = new Set([cell.id]);
   updateAllCellStates();
-  updateSelection(cell);
+  updateSelection();
+  updateWindowControlButtons();
+}
+
+function toggleCellSelection(cell) {
+  const selectedIds = new Set(viewState.selectedIds);
+
+  if (selectedIds.has(cell.id)) {
+    selectedIds.delete(cell.id);
+  } else {
+    selectedIds.add(cell.id);
+    viewState.selectedId = cell.id;
+  }
+
+  viewState.selectedIds = selectedIds;
+  if (!selectedIds.has(viewState.selectedId)) {
+    const nextSelectedIds = Array.from(selectedIds);
+    viewState.selectedId = nextSelectedIds[nextSelectedIds.length - 1] || null;
+  }
+
+  updateAllCellStates();
+  updateSelection();
+  updateWindowControlButtons();
+}
+
+function selectCellFromEvent(cell, event) {
+  if (event.ctrlKey) {
+    toggleCellSelection(cell);
+    return;
+  }
+
+  selectCell(cell);
 }
 
 function clearSelection() {
   viewState.selectedId = null;
+  viewState.selectedIds.clear();
   updateAllCellStates();
   selectionText.textContent = "尚未选择。";
+  updateWindowControlButtons();
+}
+
+function getSelectedCells() {
+  return Array.from(viewState.selectedIds)
+    .map((id) => getCellById(id))
+    .filter(Boolean);
+}
+
+function updateWindowControlButtons() {
+  if (!minimizeBoardsButton || !maximizeBoardsButton || !minimizeBoxesButton || !maximizeBoxesButton) {
+    return;
+  }
+
+  const selectedCount = getSelectedCells().length;
+  const disabled = selectedCount === 0;
+  minimizeBoardsButton.disabled = disabled;
+  maximizeBoardsButton.disabled = disabled;
+  minimizeBoxesButton.disabled = disabled;
+  maximizeBoxesButton.disabled = disabled;
+  minimizeBoardsButton.title = disabled ? "先选中一个或多个小长方体" : `隐藏 ${selectedCount} 个选中板子`;
+  maximizeBoardsButton.title = disabled ? "先选中一个或多个小长方体" : `恢复 ${selectedCount} 个选中板子`;
+  minimizeBoxesButton.title = disabled ? "先选中一个或多个小长方体" : `隐藏 ${selectedCount} 个选中方框`;
+  maximizeBoxesButton.title = disabled ? "先选中一个或多个小长方体" : `恢复 ${selectedCount} 个选中方框`;
+}
+
+function setSelectedBoardsVisibility(hidden) {
+  if (editingState) {
+    stopEditing({ commit: true });
+  }
+
+  const selectedCells = getSelectedCells();
+  if (selectedCells.length === 0) {
+    updateWindowControlButtons();
+    return;
+  }
+
+  const beforeSnapshot = createHistorySnapshot();
+  selectedCells.forEach((cell) => {
+    const key = getBoardKeyFromCoord(cell.coord);
+    const board = normalizeBoard(key, state.boards[key]);
+    state.boards[key] = {
+      ...board,
+      hidden
+    };
+  });
+  renderCells();
+  updateSelection();
+  updateWindowControlButtons();
+  commitHistorySnapshot(beforeSnapshot);
+}
+
+function setSelectedBoxesVisibility(boxHidden) {
+  if (editingState) {
+    stopEditing({ commit: true });
+  }
+
+  const selectedCells = getSelectedCells();
+  if (selectedCells.length === 0) {
+    updateWindowControlButtons();
+    return;
+  }
+
+  const beforeSnapshot = createHistorySnapshot();
+  selectedCells.forEach((cell) => {
+    const key = getBoardKeyFromCoord(cell.coord);
+    const board = normalizeBoard(key, state.boards[key]);
+    state.boards[key] = {
+      ...board,
+      boxHidden
+    };
+  });
+  renderCells();
+  updateSelection();
+  updateWindowControlButtons();
+  commitHistorySnapshot(beforeSnapshot);
 }
 
 function syncEditingRows() {
@@ -336,7 +1472,7 @@ function syncEditingRows() {
     return;
   }
 
-  const activeCount = getTextLineCount(editingState.textarea.value);
+  const activeCount = getEditorBlocks(editingState.editor).length;
   const rowCount = viewState.rowRule === ROW_RULES.LOCAL
     ? activeCount
     : Math.max(getGlobalNoteRowCount(), activeCount);
@@ -360,18 +1496,23 @@ function stopEditing({ commit }) {
     return;
   }
 
-  const { cellId, key, originalText, textarea } = editingState;
-  const nextText = commit ? textarea.value : originalText;
-  state.boardTexts[key] = nextText;
-  textarea.remove();
+  const { cellId, key, originalBlocks, editor, floatingToolbar, beforeSnapshot } = editingState;
+  const nextBlocks = commit ? getEditorBlocks(editor) : originalBlocks;
+  setBoardBlocks(key, nextBlocks);
+  editor.remove();
+  floatingToolbar.remove();
   editingState = null;
-  viewState.selectedId = cellId;
+  updateFormatToolbarState();
   renderCells();
   renderConfig();
 
   const cell = getCellById(cellId);
   if (cell) {
     selectCell(cell);
+  }
+
+  if (commit) {
+    commitHistorySnapshot(beforeSnapshot);
   }
 }
 
@@ -385,16 +1526,22 @@ function beginEditing(cell, note) {
   }
 
   const key = getBoardKeyFromCoord(cell.coord);
-  const originalText = state.boardTexts[key] || "";
+  const originalBlocks = cloneData(getBoardBlocks(key));
   viewState.selectedId = cell.id;
+  viewState.selectedIds = new Set([cell.id]);
   updateAllCellStates();
   note.classList.add("is-editing");
 
-  const editor = document.createElement("textarea");
-  editor.className = "note-editor note-editor-overlay";
-  editor.value = originalText;
-  editor.spellcheck = false;
+  const editor = document.createElement("div");
+  editor.className = "note-editor note-editor-overlay rich-note-editor";
   editor.setAttribute("aria-label", `${cell.label} 文本编辑`);
+
+  const blockList = document.createElement("div");
+  blockList.className = "rich-editor-blocks";
+  blockList.appendChild(createEditorBlocks(originalBlocks));
+  editor.appendChild(blockList);
+  updateEditorMarkers(editor);
+  const floatingToolbar = createFloatingFormatToolbar();
 
   ["pointerdown", "pointerup", "click", "dblclick", "mousedown", "mouseup"].forEach((eventName) => {
     editor.addEventListener(eventName, (event) => {
@@ -402,8 +1549,7 @@ function beginEditing(cell, note) {
     });
   });
   editor.addEventListener("input", () => {
-    state.boardTexts[key] = editor.value;
-    syncEditingRows();
+    updateEditorStateFromDom(editor, key);
   });
   editor.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
@@ -413,7 +1559,7 @@ function beginEditing(cell, note) {
       return;
     }
 
-    if (event.key === "Enter" && !event.shiftKey && !event.altKey) {
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
       event.stopPropagation();
       stopEditing({ commit: true });
@@ -421,16 +1567,61 @@ function beginEditing(cell, note) {
     }
 
     if (event.key === "Enter") {
-      window.setTimeout(syncEditingRows, 0);
+      const block = getEditorBlockFromEventTarget(event.target);
+      if (block) {
+        event.preventDefault();
+        event.stopPropagation();
+        insertEditorBlockAfter(editor, block);
+      }
+      return;
+    }
+
+    if (event.key === "Tab") {
+      event.preventDefault();
+      event.stopPropagation();
+      shiftActiveBlockIndent(editor, event.shiftKey ? -1 : 1);
+      return;
+    }
+
+    const keyName = event.key.toLowerCase();
+    if ((event.ctrlKey || event.metaKey) && ["b", "i", "u"].includes(keyName)) {
+      event.preventDefault();
+      document.execCommand(keyName === "b" ? "bold" : keyName === "i" ? "italic" : "underline");
+      updateEditorStateFromDom(editor, key);
+      updateFormatToolbarState();
+      return;
+    }
+
+    if ((event.ctrlKey || event.metaKey) && keyName === ".") {
+      event.preventDefault();
+      document.execCommand("superscript");
+      updateEditorStateFromDom(editor, key);
+      return;
+    }
+
+    if ((event.ctrlKey || event.metaKey) && keyName === ",") {
+      event.preventDefault();
+      document.execCommand("subscript");
+      updateEditorStateFromDom(editor, key);
     }
   });
 
   document.body.appendChild(editor);
-  editingState = { cellId: cell.id, key, originalText, textarea: editor, note, noteRect: null };
+  document.body.appendChild(floatingToolbar);
+  editingState = {
+    cellId: cell.id,
+    key,
+    originalBlocks,
+    editor,
+    floatingToolbar,
+    note,
+    noteRect: null,
+    beforeSnapshot: createHistorySnapshot()
+  };
+  updateFormatToolbarState();
   syncEditingRows();
   updateEditingOverlayBounds();
-  editor.focus();
-  editor.setSelectionRange(editor.value.length, editor.value.length);
+  placeCaretAtEnd(editor.querySelector(".editor-block"));
 }
 
 function toPixels(value) {
@@ -450,8 +1641,8 @@ function updateEditingOverlayBounds() {
     return;
   }
 
-  const { note, textarea } = editingState;
-  if (!note.isConnected || !textarea.isConnected) {
+  const { note, editor, floatingToolbar } = editingState;
+  if (!note.isConnected || !editor.isConnected) {
     return;
   }
 
@@ -469,15 +1660,20 @@ function updateEditingOverlayBounds() {
     bottom: rect.bottom
   };
 
-  textarea.style.left = `${rect.left}px`;
-  textarea.style.top = `${rect.top}px`;
-  textarea.style.width = `${rect.width}px`;
-  textarea.style.height = `${rect.height}px`;
-  textarea.style.padding = scaleBoxValue(noteStyle.padding, visualScale);
-  textarea.style.borderRadius = noteStyle.borderRadius;
-  textarea.style.fontSize = `${fontSize}px`;
-  textarea.style.fontWeight = lineStyle.fontWeight;
-  textarea.style.lineHeight = `${lineHeight}px`;
+  editor.style.left = `${rect.left}px`;
+  editor.style.top = `${rect.top}px`;
+  editor.style.width = `${rect.width}px`;
+  editor.style.height = `${rect.height}px`;
+  editor.style.padding = scaleBoxValue(noteStyle.padding, visualScale);
+  editor.style.borderRadius = noteStyle.borderRadius;
+  editor.style.fontSize = `${fontSize}px`;
+  editor.style.fontWeight = lineStyle.fontWeight;
+  editor.style.lineHeight = `${lineHeight}px`;
+
+  if (floatingToolbar?.isConnected) {
+    floatingToolbar.style.left = `${Math.max(8, rect.left)}px`;
+    floatingToolbar.style.top = `${Math.max(8, rect.top - floatingToolbar.offsetHeight - 8)}px`;
+  }
 }
 
 function isPointInsideElement(event, element) {
@@ -562,6 +1758,7 @@ function renderCell(cell) {
 
   const note = document.createElement("div");
   note.className = "note";
+  note.classList.toggle("is-board-hidden", cell.hidden);
   note.title = getFullText(cell);
   note.addEventListener("pointerdown", (event) => {
     event.stopPropagation();
@@ -575,7 +1772,7 @@ function renderCell(cell) {
     if (editingState) {
       stopEditing({ commit: true });
     }
-    selectCell(cell);
+    selectCellFromEvent(cell, event);
   });
   note.addEventListener("dblclick", (event) => {
     event.preventDefault();
@@ -594,12 +1791,14 @@ function renderCell(cell) {
   const rowList = document.createElement("ul");
   rowList.className = "note-lines";
 
-  getNoteRows(cell).forEach((line, index) => {
+  const numberCounters = Array.from({ length: INDENT_MAX + 1 }, () => 0);
+  getNoteBlocks(cell).forEach((block, index) => {
     const item = document.createElement("li");
     item.className = "note-line";
-    item.textContent = line;
-    item.title = line;
-    item.dataset.empty = line ? "false" : "true";
+    applyListMarkerData(item, block, numberCounters);
+    renderBlockContent(item, block);
+    item.title = block.text;
+    item.dataset.empty = block.text ? "false" : "true";
     item.dataset.row = String(index + 1);
     rowList.appendChild(item);
   });
@@ -634,7 +1833,7 @@ function renderCell(cell) {
     cellPointerStart = {
       x: event.clientX,
       y: event.clientY,
-      wasSelected: viewState.selectedId === cell.id
+      wasSelected: viewState.selectedIds.has(cell.id)
     };
   });
 
@@ -656,7 +1855,7 @@ function renderCell(cell) {
     if (editingState) {
       stopEditing({ commit: true });
     }
-    selectCell(cell);
+    selectCellFromEvent(cell, event);
   });
 
   element.addEventListener("click", (event) => {
@@ -692,6 +1891,7 @@ function renderCells() {
   });
   renderSliceControls();
   applyViewTransform();
+  updateWindowControlButtons();
 }
 
 function setCuboidBounds() {
@@ -732,6 +1932,10 @@ function updateSpacingControls() {
 }
 
 function updateShapeControls() {
+  if (!textSizeInput) {
+    return;
+  }
+
   textSizeInput.value = viewState.textSize;
 }
 
@@ -750,6 +1954,7 @@ function createSliceControl({ axis, index, label, value, min, max, baseTransform
   field.dataset.axis = axis;
   field.dataset.index = String(index);
   field.dataset.baseTransform = baseTransform;
+  let beforeSnapshot = null;
 
   const input = document.createElement("input");
   input.type = "number";
@@ -765,15 +1970,28 @@ function createSliceControl({ axis, index, label, value, min, max, baseTransform
     });
   });
 
-  input.addEventListener("change", () => syncSliceControlInput(input));
-  input.addEventListener("blur", () => syncSliceControlInput(input));
+  const captureBeforeSnapshot = () => {
+    if (!beforeSnapshot) {
+      beforeSnapshot = createHistorySnapshot();
+    }
+  };
+  const commitSliceChange = () => {
+    syncSliceControlInput(input, beforeSnapshot);
+    beforeSnapshot = null;
+  };
+
+  input.addEventListener("focus", captureBeforeSnapshot);
+  input.addEventListener("pointerdown", captureBeforeSnapshot);
+  input.addEventListener("change", commitSliceChange);
+  input.addEventListener("blur", commitSliceChange);
   input.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") {
       return;
     }
 
     event.preventDefault();
-    syncSliceControlInput(input);
+    captureBeforeSnapshot();
+    commitSliceChange();
     input.blur();
   });
 
@@ -860,8 +2078,9 @@ function updateCellClasses(element, cell) {
   }
 
   element.classList.toggle("is-muted", cell.opacity < 1);
-  element.classList.toggle("is-selected", cell.id === viewState.selectedId);
+  element.classList.toggle("is-selected", viewState.selectedIds.has(cell.id));
   element.classList.toggle("is-editing", editingState?.cellId === cell.id);
+  element.classList.toggle("is-box-hidden", cell.boxHidden);
 }
 
 function updateAllCellStates() {
@@ -871,9 +2090,19 @@ function updateAllCellStates() {
   });
 }
 
-function updateSelection(cell) {
-  const selected = viewState.selectedId === cell.id;
-  selectionText.textContent = selected ? getFullText(cell) : "尚未选择。";
+function updateSelection() {
+  const selectedCells = getSelectedCells();
+  if (selectedCells.length === 0) {
+    selectionText.textContent = "尚未选择。";
+    return;
+  }
+
+  if (selectedCells.length === 1) {
+    selectionText.textContent = getFullText(selectedCells[0]);
+    return;
+  }
+
+  selectionText.textContent = `已选择 ${selectedCells.length} 个板子。`;
 }
 
 function applyViewTransform() {
@@ -909,40 +2138,9 @@ function renderConfig() {
   widthInput.value = state.dimensions.width;
   heightInput.value = state.dimensions.height;
   depthInput.value = state.dimensions.depth;
-  structureReadout.textContent = `当前共有 ${state.dimensions.depth} × ${state.dimensions.height} × ${state.dimensions.width} = ${count} 个板子`;
-
-  const fragment = document.createDocumentFragment();
-
-  for (let z = 0; z < state.dimensions.depth; z += 1) {
-    for (let y = 0; y < state.dimensions.height; y += 1) {
-      for (let x = 0; x < state.dimensions.width; x += 1) {
-        const key = getBoardKey(x, y, z);
-        const field = document.createElement("label");
-        field.className = "board-field";
-
-        const title = document.createElement("span");
-        title.className = "board-field-title";
-        title.textContent = `第 ${z + 1} 深 / 第 ${y + 1} 行 / 第 ${x + 1} 列`;
-
-        const textarea = document.createElement("textarea");
-        textarea.value = state.boardTexts[key] || "";
-        textarea.rows = 4;
-        textarea.spellcheck = false;
-        textarea.dataset.boardKey = key;
-        textarea.addEventListener("input", () => {
-          state.boardTexts[key] = textarea.value;
-          viewState.selectedId = null;
-          renderCells();
-          structureReadout.textContent = `当前共有 ${state.dimensions.depth} × ${state.dimensions.height} × ${state.dimensions.width} = ${count} 个板子`;
-        });
-
-        field.append(title, textarea);
-        fragment.appendChild(field);
-      }
-    }
+  if (structureReadout) {
+    structureReadout.textContent = `当前共有 ${state.dimensions.depth} × ${state.dimensions.height} × ${state.dimensions.width} = ${count} 个板子`;
   }
-
-  boardEditorGrid.replaceChildren(fragment);
 }
 
 function syncDimensionsFromInputs({ allowFallback = true } = {}) {
@@ -950,6 +2148,7 @@ function syncDimensionsFromInputs({ allowFallback = true } = {}) {
     stopEditing({ commit: true });
   }
 
+  const beforeSnapshot = createHistorySnapshot();
   const nextWidth = Number.parseInt(widthInput.value, 10);
   const nextHeight = Number.parseInt(heightInput.value, 10);
   const nextDepth = Number.parseInt(depthInput.value, 10);
@@ -966,9 +2165,11 @@ function syncDimensionsFromInputs({ allowFallback = true } = {}) {
   gridSpec.depth = state.dimensions.depth;
   syncSliceSizesToDimensions();
   viewState.selectedId = null;
-  ensureBoardTexts();
+  viewState.selectedIds.clear();
+  ensureBoards();
   renderCells();
   renderConfig();
+  commitHistorySnapshot(beforeSnapshot);
 }
 
 function resetDimensionInputs() {
@@ -977,7 +2178,11 @@ function resetDimensionInputs() {
   depthInput.value = state.dimensions.depth;
 }
 
-function syncShapeControlsFromInputs({ allowFallback = true } = {}) {
+function syncShapeControlsFromInputs({ allowFallback = true, beforeSnapshot = null } = {}) {
+  if (!textSizeInput) {
+    return;
+  }
+
   if (editingState) {
     stopEditing({ commit: true });
   }
@@ -991,9 +2196,10 @@ function syncShapeControlsFromInputs({ allowFallback = true } = {}) {
   viewState.textSize = toTextSize(textSizeInput.value, viewState.textSize);
   updateShapeControls();
   renderCells();
+  commitHistorySnapshot(beforeSnapshot);
 }
 
-function syncSliceControlInput(input) {
+function syncSliceControlInput(input, beforeSnapshot = null) {
   const field = input.closest(".slice-control");
   if (!field) {
     return;
@@ -1010,23 +2216,9 @@ function syncSliceControlInput(input) {
   const nextValue = toCellSize(input.value, axis, fallback);
   state.sliceSizes[listName][index] = nextValue;
   viewState.selectedId = null;
+  viewState.selectedIds.clear();
   renderCells();
-}
-
-function switchPage(targetId) {
-  tabButtons.forEach((button) => {
-    button.classList.toggle("is-active", button.dataset.pageTarget === targetId);
-  });
-
-  pages.forEach((page) => {
-    const active = page.id === targetId;
-    page.classList.toggle("is-active", active);
-    page.hidden = !active;
-  });
-
-  if (targetId === "previewPage") {
-    applyViewTransform();
-  }
+  commitHistorySnapshot(beforeSnapshot);
 }
 
 function handlePointerDown(event) {
@@ -1079,13 +2271,18 @@ function resetView() {
   viewState.rotationY = -34;
   viewState.zoom = ZOOM_BASE;
   viewState.selectedId = null;
+  viewState.selectedIds.clear();
   cells.forEach((cell) => {
     cell.opacity = 1;
   });
   updateAllCellStates();
   selectionText.textContent = "尚未选择。";
+  updateWindowControlButtons();
   applyViewTransform();
 }
+
+wireFormatToolbar(topFormatToolbar);
+updateFormatToolbarState();
 
 scene.addEventListener("pointerdown", handlePointerDown);
 scene.addEventListener("pointermove", handlePointerMove);
@@ -1093,26 +2290,78 @@ scene.addEventListener("pointerup", handlePointerUp);
 scene.addEventListener("pointercancel", handlePointerUp);
 scene.addEventListener("wheel", handleWheel, { passive: false });
 window.addEventListener("resize", updateEditingOverlayBounds);
+window.addEventListener("beforeunload", (event) => {
+  const hasUncommittedEdit = editingState
+    && !areSnapshotsEqual(editingState.originalBlocks, getEditorBlocks(editingState.editor));
+  if (!saveState.isDirty && !hasUncommittedEdit) {
+    return;
+  }
+
+  event.preventDefault();
+  event.returnValue = "";
+});
 resetViewButton.addEventListener("click", resetView);
+undoButton.addEventListener("click", undoHistoryStep);
+redoButton.addEventListener("click", redoHistoryStep);
+saveButton.addEventListener("click", saveBoardState);
+minimizeBoardsButton.addEventListener("click", (event) => {
+  event.stopPropagation();
+  setSelectedBoardsVisibility(true);
+});
+
+maximizeBoardsButton.addEventListener("click", (event) => {
+  event.stopPropagation();
+  setSelectedBoardsVisibility(false);
+});
+
+minimizeBoxesButton.addEventListener("click", (event) => {
+  event.stopPropagation();
+  setSelectedBoxesVisibility(true);
+});
+
+maximizeBoxesButton.addEventListener("click", (event) => {
+  event.stopPropagation();
+  setSelectedBoxesVisibility(false);
+});
+spacingInput.addEventListener("focus", () => {
+  if (!spacingChangeSnapshot) {
+    spacingChangeSnapshot = createHistorySnapshot();
+  }
+});
+spacingInput.addEventListener("pointerdown", () => {
+  if (!spacingChangeSnapshot) {
+    spacingChangeSnapshot = createHistorySnapshot();
+  }
+});
 spacingInput.addEventListener("input", () => {
   viewState.gap = Number.parseInt(spacingInput.value, 10);
   applyCellSpacing();
+});
+spacingInput.addEventListener("change", () => {
+  commitHistorySnapshot(spacingChangeSnapshot);
+  spacingChangeSnapshot = null;
 });
 rowRuleSelect.addEventListener("change", () => {
   if (editingState) {
     stopEditing({ commit: true });
   }
 
+  const beforeSnapshot = createHistorySnapshot();
   viewState.rowRule = rowRuleSelect.value;
   renderCells();
+  commitHistorySnapshot(beforeSnapshot);
 });
 detailPreviewSelect.addEventListener("change", () => {
+  const beforeSnapshot = createHistorySnapshot();
   viewState.detailPreview = detailPreviewSelect.value === "on";
   cuboid.classList.toggle("has-detail-preview", viewState.detailPreview);
+  commitHistorySnapshot(beforeSnapshot);
 });
 markerVisibilitySelect.addEventListener("change", () => {
+  const beforeSnapshot = createHistorySnapshot();
   viewState.markersVisible = markerVisibilitySelect.value === "on";
   cuboid.classList.toggle("has-markers", viewState.markersVisible);
+  commitHistorySnapshot(beforeSnapshot);
 });
 
 [widthInput, heightInput, depthInput].forEach((input) => {
@@ -1133,34 +2382,40 @@ markerVisibilitySelect.addEventListener("change", () => {
   });
 });
 
-textSizeInput.addEventListener("input", () => syncShapeControlsFromInputs({ allowFallback: false }));
-textSizeInput.addEventListener("change", () => syncShapeControlsFromInputs());
-textSizeInput.addEventListener("blur", () => syncShapeControlsFromInputs());
-textSizeInput.addEventListener("keydown", (event) => {
-  if (event.key !== "Enter") {
-    return;
-  }
-
-  event.preventDefault();
-  syncShapeControlsFromInputs();
-  textSizeInput.blur();
-});
-
-fillDefaultsButton.addEventListener("click", () => {
-  if (editingState) {
-    stopEditing({ commit: true });
-  }
-
-  ensureBoardTexts({ reset: true });
-  renderCells();
-  renderConfig();
-});
-
-tabButtons.forEach((button) => {
-  button.addEventListener("click", () => {
-    switchPage(button.dataset.pageTarget);
+if (textSizeInput) {
+  textSizeInput.addEventListener("focus", () => {
+    if (!textSizeChangeSnapshot) {
+      textSizeChangeSnapshot = createHistorySnapshot();
+    }
   });
-});
+  textSizeInput.addEventListener("pointerdown", () => {
+    if (!textSizeChangeSnapshot) {
+      textSizeChangeSnapshot = createHistorySnapshot();
+    }
+  });
+  textSizeInput.addEventListener("input", () => syncShapeControlsFromInputs({ allowFallback: false }));
+  textSizeInput.addEventListener("change", () => {
+    syncShapeControlsFromInputs({ beforeSnapshot: textSizeChangeSnapshot });
+    textSizeChangeSnapshot = null;
+  });
+  textSizeInput.addEventListener("blur", () => {
+    syncShapeControlsFromInputs({ beforeSnapshot: textSizeChangeSnapshot });
+    textSizeChangeSnapshot = null;
+  });
+  textSizeInput.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+
+    event.preventDefault();
+    if (!textSizeChangeSnapshot) {
+      textSizeChangeSnapshot = createHistorySnapshot();
+    }
+    syncShapeControlsFromInputs({ beforeSnapshot: textSizeChangeSnapshot });
+    textSizeChangeSnapshot = null;
+    textSizeInput.blur();
+  });
+}
 
 document.addEventListener("click", (event) => {
   if (editingState) {
@@ -1171,8 +2426,8 @@ document.addEventListener("click", (event) => {
       && event.clientY >= rect.top
       && event.clientY <= rect.bottom;
 
-    if (editingState.textarea.contains(event.target) || isInsideNote) {
-      editingState.textarea.focus();
+    if (editingState.editor.contains(event.target) || isInsideNote) {
+      getActiveEditorBlock(editingState.editor)?.focus();
       return;
     }
 
@@ -1184,20 +2439,53 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
+  const key = event.key.toLowerCase();
+  const isSaveShortcut = (event.ctrlKey || event.metaKey) && key === "s";
+  const isUndoShortcut = (event.ctrlKey || event.metaKey) && !event.shiftKey && key === "z";
+  const isRedoShortcut = (event.ctrlKey || event.metaKey) && (key === "y" || (event.shiftKey && key === "z"));
+
+  if (isSaveShortcut) {
+    event.preventDefault();
+    saveBoardState();
+    return;
+  }
+
+  if (isUndoShortcut || isRedoShortcut) {
+    event.preventDefault();
+    if (isUndoShortcut) {
+      undoHistoryStep();
+      return;
+    }
+
+    redoHistoryStep();
+    return;
+  }
+
   if (event.key !== "Escape" || editingState) {
     return;
   }
 
-  if (viewState.selectedId) {
+  if (viewState.selectedIds.size > 0) {
     event.preventDefault();
     clearSelection();
   }
 });
 
-ensureBoardTexts();
-updateShapeControls();
-renderCells();
-renderConfig();
+async function initializeApp() {
+  await loadSavedState();
+  rowRuleSelect.value = viewState.rowRule;
+  detailPreviewSelect.value = viewState.detailPreview ? "on" : "off";
+  markerVisibilitySelect.value = viewState.markersVisible ? "on" : "off";
+  updateShapeControls();
+  renderCells();
+  renderConfig();
+  historyState.undoStack = [];
+  historyState.redoStack = [];
+  updateHistoryButtons();
+  updateSaveStatus(saveState.loadError ? { variant: "error", message: "未连接保存" } : undefined);
+}
+
+initializeApp();
 
 window.knowledgeBoard = {
   gridSpec,
@@ -1207,5 +2495,6 @@ window.knowledgeBoard = {
   },
   viewState,
   ROW_RULES,
-  resetView
+  resetView,
+  saveBoardState
 };

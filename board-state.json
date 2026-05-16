@@ -1,0 +1,522 @@
+{
+  "schemaVersion": 1,
+  "savedAt": "2026-05-13T02:54:57.093Z",
+  "dimensions": {
+    "width": 3,
+    "height": 2,
+    "depth": 2
+  },
+  "sliceSizes": {
+    "widths": [
+      116,
+      116,
+      116
+    ],
+    "heights": [
+      92,
+      92
+    ],
+    "depths": [
+      86,
+      86
+    ]
+  },
+  "view": {
+    "gap": 8,
+    "rowRule": "global-max",
+    "detailPreview": false,
+    "markersVisible": false,
+    "textSize": 10
+  },
+  "boards": {
+    "0-0-0": {
+      "id": "0-0-0",
+      "blocks": [
+        {
+          "id": "block-1",
+          "type": "heading",
+          "indent": 0,
+          "text": "核心论点",
+          "marks": []
+        },
+        {
+          "id": "block-2",
+          "type": "bullet",
+          "indent": 0,
+          "text": "定义问题",
+          "marks": [],
+          "listStyle": "disc"
+        },
+        {
+          "id": "block-3",
+          "type": "bullet",
+          "indent": 0,
+          "text": "限定范围",
+          "marks": [],
+          "listStyle": "disc"
+        },
+        {
+          "id": "block-4",
+          "type": "bullet",
+          "indent": 0,
+          "text": "提出判断",
+          "marks": [],
+          "listStyle": "disc"
+        }
+      ],
+      "links": []
+    },
+    "1-0-0": {
+      "id": "1-0-0",
+      "blocks": [
+        {
+          "id": "block-1",
+          "type": "heading",
+          "indent": 0,
+          "text": "第一条理由",
+          "marks": []
+        },
+        {
+          "id": "block-2",
+          "type": "bullet",
+          "indent": 0,
+          "text": "因果链",
+          "marks": [],
+          "listStyle": "disc"
+        },
+        {
+          "id": "block-3",
+          "type": "bullet",
+          "indent": 0,
+          "text": "关键证据",
+          "marks": [],
+          "listStyle": "disc"
+        },
+        {
+          "id": "block-4",
+          "type": "bullet",
+          "indent": 0,
+          "text": "反例边界",
+          "marks": [],
+          "listStyle": "disc"
+        }
+      ],
+      "links": []
+    },
+    "2-0-0": {
+      "id": "2-0-0",
+      "blocks": [
+        {
+          "id": "block-1",
+          "type": "heading",
+          "indent": 0,
+          "text": "第二条理由",
+          "marks": []
+        },
+        {
+          "id": "block-2",
+          "type": "bullet",
+          "indent": 0,
+          "text": "比较对象",
+          "marks": [],
+          "listStyle": "disc"
+        },
+        {
+          "id": "block-3",
+          "type": "bullet",
+          "indent": 0,
+          "text": "差异来源",
+          "marks": [],
+          "listStyle": "disc"
+        },
+        {
+          "id": "block-4",
+          "type": "bullet",
+          "indent": 0,
+          "text": "适用条件",
+          "marks": [],
+          "listStyle": "disc"
+        }
+      ],
+      "links": []
+    },
+    "0-1-0": {
+      "id": "0-1-0",
+      "blocks": [
+        {
+          "id": "block-1",
+          "type": "heading",
+          "indent": 0,
+          "text": "选择节点",
+          "marks": []
+        },
+        {
+          "id": "block-2",
+          "type": "bullet",
+          "indent": 0,
+          "text": "如果 A 成立",
+          "marks": [],
+          "listStyle": "disc"
+        },
+        {
+          "id": "block-3",
+          "type": "bullet",
+          "indent": 0,
+          "text": "转向方案 1",
+          "marks": [],
+          "listStyle": "disc"
+        },
+        {
+          "id": "block-4",
+          "type": "bullet",
+          "indent": 0,
+          "text": "否则检查 B",
+          "marks": [],
+          "listStyle": "disc"
+        }
+      ],
+      "links": []
+    },
+    "1-1-0": {
+      "id": "1-1-0",
+      "blocks": [
+        {
+          "id": "block-1",
+          "type": "heading",
+          "indent": 0,
+          "text": "证据组",
+          "marks": []
+        },
+        {
+          "id": "block-2",
+          "type": "bullet",
+          "indent": 0,
+          "text": "数据",
+          "marks": [],
+          "listStyle": "disc"
+        },
+        {
+          "id": "block-3",
+          "type": "bullet",
+          "indent": 0,
+          "text": "案例",
+          "marks": [],
+          "listStyle": "disc"
+        },
+        {
+          "id": "block-4",
+          "type": "bullet",
+          "indent": 0,
+          "text": "可信度",
+          "marks": [],
+          "listStyle": "disc"
+        }
+      ],
+      "links": []
+    },
+    "2-1-0": {
+      "id": "2-1-0",
+      "blocks": [
+        {
+          "id": "block-1",
+          "type": "heading",
+          "indent": 0,
+          "text": "反方观点",
+          "marks": []
+        },
+        {
+          "id": "block-2",
+          "type": "bullet",
+          "indent": 0,
+          "text": "对方假设",
+          "marks": [],
+          "listStyle": "disc"
+        },
+        {
+          "id": "block-3",
+          "type": "bullet",
+          "indent": 0,
+          "text": "薄弱点",
+          "marks": [],
+          "listStyle": "disc"
+        },
+        {
+          "id": "block-4",
+          "type": "bullet",
+          "indent": 0,
+          "text": "回应方式",
+          "marks": [],
+          "listStyle": "disc"
+        }
+      ],
+      "links": []
+    },
+    "0-0-1": {
+      "id": "0-0-1",
+      "blocks": [
+        {
+          "id": "block-1",
+          "type": "bullet",
+          "indent": 0,
+          "text": "相邻连接",
+          "marks": [],
+          "listStyle": "circle"
+        },
+        {
+          "id": "block-2",
+          "type": "bullet",
+          "indent": 0,
+          "text": "和 Cell 01 匹配",
+          "marks": [],
+          "listStyle": "disc"
+        },
+        {
+          "id": "block-3",
+          "type": "bullet",
+          "indent": 0,
+          "text": "和 Cell 10 对照",
+          "marks": [],
+          "listStyle": "disc"
+        },
+        {
+          "id": "block-4",
+          "type": "bullet",
+          "indent": 0,
+          "text": "形成链条",
+          "marks": [],
+          "listStyle": "disc"
+        },
+        {
+          "id": "block-1778639197373",
+          "type": "bullet",
+          "indent": 0,
+          "text": "234",
+          "marks": [
+            {
+              "type": "subscript",
+              "start": 2,
+              "end": 3
+            }
+          ],
+          "listStyle": "disc"
+        },
+        {
+          "id": "block-1778639207035",
+          "type": "bullet",
+          "indent": 0,
+          "text": "",
+          "marks": [],
+          "listStyle": "disc"
+        }
+      ],
+      "links": []
+    },
+    "1-0-1": {
+      "id": "1-0-1",
+      "blocks": [
+        {
+          "id": "block-1",
+          "type": "heading",
+          "indent": 0,
+          "text": "例子",
+          "marks": []
+        },
+        {
+          "id": "block-2",
+          "type": "bullet",
+          "indent": 0,
+          "text": "具体场景",
+          "marks": [],
+          "listStyle": "disc"
+        },
+        {
+          "id": "block-3",
+          "type": "bullet",
+          "indent": 0,
+          "text": "变量变化",
+          "marks": [],
+          "listStyle": "disc"
+        },
+        {
+          "id": "block-4",
+          "type": "bullet",
+          "indent": 0,
+          "text": "结论回扣",
+          "marks": [],
+          "listStyle": "disc"
+        }
+      ],
+      "links": []
+    },
+    "2-0-1": {
+      "id": "2-0-1",
+      "blocks": [
+        {
+          "id": "block-1",
+          "type": "heading",
+          "indent": 0,
+          "text": "判断规则",
+          "marks": []
+        },
+        {
+          "id": "block-2",
+          "type": "bullet",
+          "indent": 0,
+          "text": "阈值",
+          "marks": [],
+          "listStyle": "disc"
+        },
+        {
+          "id": "block-3",
+          "type": "bullet",
+          "indent": 0,
+          "text": "例外",
+          "marks": [],
+          "listStyle": "disc"
+        },
+        {
+          "id": "block-4",
+          "type": "bullet",
+          "indent": 0,
+          "text": "下一步",
+          "marks": [],
+          "listStyle": "disc"
+        }
+      ],
+      "links": []
+    },
+    "0-1-1": {
+      "id": "0-1-1",
+      "blocks": [
+        {
+          "id": "block-1",
+          "type": "heading",
+          "indent": 0,
+          "text": "记忆提示",
+          "marks": []
+        },
+        {
+          "id": "block-2",
+          "type": "bullet",
+          "indent": 0,
+          "text": "关键词",
+          "marks": [],
+          "listStyle": "disc"
+        },
+        {
+          "id": "block-3",
+          "type": "bullet",
+          "indent": 0,
+          "text": "图像化",
+          "marks": [],
+          "listStyle": "disc"
+        },
+        {
+          "id": "block-4",
+          "type": "bullet",
+          "indent": 0,
+          "text": "复述句1",
+          "marks": [],
+          "listStyle": "disc"
+        }
+      ],
+      "links": []
+    },
+    "1-1-1": {
+      "id": "1-1-1",
+      "blocks": [
+        {
+          "id": "block-1",
+          "type": "heading",
+          "indent": 0,
+          "text": "小决策树型",
+          "marks": [
+            {
+              "type": "superscript",
+              "start": 4,
+              "end": 5
+            }
+          ]
+        },
+        {
+          "id": "block-2",
+          "type": "bullet",
+          "indent": 0,
+          "text": "问题",
+          "marks": [],
+          "listStyle": "disc"
+        },
+        {
+          "id": "block-3",
+          "type": "bullet",
+          "indent": 0,
+          "text": "分支",
+          "marks": [],
+          "listStyle": "disc"
+        },
+        {
+          "id": "block-4",
+          "type": "bullet",
+          "indent": 0,
+          "text": "结果",
+          "marks": [],
+          "listStyle": "disc"
+        },
+        {
+          "id": "block-5",
+          "type": "bullet",
+          "indent": 0,
+          "text": "反思过程",
+          "marks": [],
+          "listStyle": "disc"
+        },
+        {
+          "id": "block-6",
+          "type": "bullet",
+          "indent": 0,
+          "text": "总结经验",
+          "marks": [],
+          "listStyle": "disc"
+        }
+      ],
+      "links": []
+    },
+    "2-1-1": {
+      "id": "2-1-1",
+      "blocks": [
+        {
+          "id": "block-1",
+          "type": "heading",
+          "indent": 0,
+          "text": "复习出口",
+          "marks": []
+        },
+        {
+          "id": "block-2",
+          "type": "bullet",
+          "indent": 0,
+          "text": "总结",
+          "marks": [],
+          "listStyle": "disc"
+        },
+        {
+          "id": "block-3",
+          "type": "bullet",
+          "indent": 0,
+          "text": "盲点",
+          "marks": [],
+          "listStyle": "disc"
+        },
+        {
+          "id": "block-4",
+          "type": "bullet",
+          "indent": 0,
+          "text": "下一轮",
+          "marks": [],
+          "listStyle": "disc"
+        }
+      ],
+      "links": []
+    }
+  }
+}
