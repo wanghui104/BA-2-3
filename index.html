@@ -23,10 +23,42 @@
       </div>
 
       <div class="text-format-toolbar top-format-toolbar" id="topFormatToolbar" aria-label="文字格式">
+        <div class="format-row format-row-size">
+        <button type="button" data-format-action="clear-format" title="清除格式">Tx</button>
+        <label class="format-size-control" title="字号">
+          <span class="sr-only">字号</span>
+          <select data-format-size>
+            <option value="8">8</option>
+            <option value="9">9</option>
+            <option value="10" selected>10</option>
+            <option value="11">11</option>
+            <option value="12">12</option>
+            <option value="14">14</option>
+            <option value="16">16</option>
+            <option value="18">18</option>
+            <option value="20">20</option>
+            <option value="24">24</option>
+          </select>
+        </label>
+        <button type="button" data-format-action="increase-size" title="放大字号">A^</button>
+        <button type="button" data-format-action="decrease-size" title="缩小字号">A˅</button>
+        </div>
+
+        <div class="format-row format-row-inline">
+        <button type="button" data-format-action="bold" title="加粗 Ctrl+B"><b>B</b></button>
+        <button type="button" data-format-action="italic" title="斜体 Ctrl+I"><i>I</i></button>
+        <button type="button" data-format-action="underline" title="下划线 Ctrl+U"><u>U</u></button>
+        <span class="format-divider"></span>
+        <label class="format-color-control" title="字体颜色">
+          <span>A</span>
+          <input type="color" data-format-color value="#1c2430" aria-label="字体颜色">
+        </label>
+        <span class="format-divider legacy-format-divider"></span>
         <button type="button" data-format-action="superscript" title="Superscript Ctrl+.">x2</button>
         <button type="button" data-format-action="subscript" title="Subscript Ctrl+,">x_</button>
-        <span class="format-divider"></span>
-        <button type="button" data-format-action="heading" title="Heading">H</button>
+        </div>
+
+        <div class="format-row format-row-block">
         <button type="button" data-format-action="paragraph" title="Paragraph">P</button>
         <div class="format-menu">
           <button type="button" data-format-action="bullet" title="Bullet">•</button>
@@ -49,6 +81,7 @@
         <span class="format-divider"></span>
         <button type="button" data-format-action="outdent" title="Outdent">&lt;</button>
         <button type="button" data-format-action="indent" title="Indent">&gt;</button>
+        </div>
       </div>
 
       <section class="page page-preview is-active" id="previewPage" aria-label="结构预览">
@@ -71,19 +104,18 @@
                 <div class="preview-dimensions" aria-labelledby="previewStructureTitle">
                   <div class="preview-dimensions-heading">
                     <h2 id="previewStructureTitle">结构配置</h2>
-                    <p class="structure-readout" id="structureReadout">当前共有 12 个板子</p>
                   </div>
                   <div class="dimension-grid dimension-grid-preview">
                     <label>
-                      <span>宽 width</span>
+                      <span>宽</span>
                       <input id="widthInput" type="text" inputmode="numeric" pattern="[0-9]*" value="3">
                     </label>
                     <label>
-                      <span>高 height</span>
+                      <span>高</span>
                       <input id="heightInput" type="text" inputmode="numeric" pattern="[0-9]*" value="2">
                     </label>
                     <label>
-                      <span>深 depth</span>
+                      <span>深</span>
                       <input id="depthInput" type="text" inputmode="numeric" pattern="[0-9]*" value="2">
                     </label>
                   </div>
@@ -106,12 +138,6 @@
                     <option value="on">辅助标记：开</option>
                   </select>
                 </label>
-                <div class="shape-controls" aria-label="小长方体和文字尺寸">
-                  <label>
-                    <span>文字</span>
-                    <input id="textSizeInput" type="number" min="2" max="24" step="1" value="10">
-                  </label>
-                </div>
               </div>
               <div class="control-bar" aria-label="model controls">
                 <button type="button" id="resetView">重置视角</button>

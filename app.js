@@ -35,7 +35,10 @@ const BLOCK_TYPES = {
   BULLET: "bullet",
   NUMBERED: "numbered"
 };
-const INLINE_MARK_TYPES = new Set(["superscript", "subscript"]);
+const INLINE_MARK_TYPES = new Set(["superscript", "subscript", "bold", "italic", "underline", "color", "fontSize"]);
+const FORMAT_SIZE_MIN = 8;
+const FORMAT_SIZE_MAX = 24;
+const FORMAT_SIZE_STEP = 1;
 const INDENT_MIN = 0;
 const INDENT_MAX = 4;
 const BULLET_LIST_STYLES = ["disc", "circle", "diamond"];
@@ -556,6 +559,22 @@ function normalizeListStyle(type, listStyle, indent = 0) {
   return getDefaultListStyle(type, indent);
 }
 
+function normalizeHexColor(value) {
+  const color = String(value || "").trim();
+  return /^#[0-9a-f]{6}$/i.test(color) ? color.toLowerCase() : null;
+}
+
+function rgbToHex(value) {
+  const match = String(value || "").match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+  if (!match) {
+    return normalizeHexColor(value);
+  }
+
+  return `#${match.slice(1, 4)
+    .map((part) => clamp(Number.parseInt(part, 10) || 0, 0, 255).toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
 function normalizeMark(mark, textLength) {
   if (!mark || !INLINE_MARK_TYPES.has(mark.type)) {
     return null;
@@ -565,6 +584,16 @@ function normalizeMark(mark, textLength) {
   const end = clamp(Number.parseInt(mark.end, 10) || 0, 0, textLength);
   if (end <= start) {
     return null;
+  }
+
+  if (mark.type === "color") {
+    const color = normalizeHexColor(mark.value) || rgbToHex(mark.value);
+    return color ? { type: mark.type, start, end, value: color } : null;
+  }
+
+  if (mark.type === "fontSize") {
+    const fontSize = clamp(Number.parseInt(mark.value, 10) || viewState.textSize, FORMAT_SIZE_MIN, FORMAT_SIZE_MAX);
+    return { type: mark.type, start, end, value: fontSize };
   }
 
   return { type: mark.type, start, end };
@@ -767,21 +796,86 @@ function appendMarkedText(parent, block) {
     return;
   }
 
-  let cursor = 0;
-  const sortedMarks = [...block.marks].sort((first, second) => first.start - second.start || first.end - second.end);
-  sortedMarks.forEach((mark) => {
-    if (mark.start > cursor) {
-      parent.appendChild(document.createTextNode(block.text.slice(cursor, mark.start)));
-    }
+  const characters = Array.from(block.text, (char) => ({
+    char,
+    bold: false,
+    italic: false,
+    underline: false,
+    superscript: false,
+    subscript: false,
+    color: null,
+    fontSize: null
+  }));
 
-    const element = document.createElement(mark.type === "superscript" ? "sup" : "sub");
-    element.textContent = block.text.slice(mark.start, mark.end);
-    parent.appendChild(element);
-    cursor = Math.max(cursor, mark.end);
+  block.marks.forEach((mark) => {
+    const start = clamp(mark.start, 0, characters.length);
+    const end = clamp(mark.end, start, characters.length);
+    for (let index = start; index < end; index += 1) {
+      if (mark.type === "color") {
+        characters[index].color = mark.value;
+      } else if (mark.type === "fontSize") {
+        characters[index].fontSize = mark.value;
+      } else if (mark.type in characters[index]) {
+        characters[index][mark.type] = true;
+      }
+    }
   });
 
-  if (cursor < block.text.length) {
-    parent.appendChild(document.createTextNode(block.text.slice(cursor)));
+  function getStyleKey(item) {
+    return JSON.stringify({
+      bold: item.bold,
+      italic: item.italic,
+      underline: item.underline,
+      superscript: item.superscript,
+      subscript: item.subscript,
+      color: item.color,
+      fontSize: item.fontSize
+    });
+  }
+
+  function appendRun(text, style) {
+    if (!style.bold && !style.italic && !style.underline && !style.superscript && !style.subscript && !style.color && !style.fontSize) {
+      parent.appendChild(document.createTextNode(text));
+      return;
+    }
+
+    const element = document.createElement(style.superscript ? "sup" : style.subscript ? "sub" : "span");
+    parent.appendChild(element);
+    element.textContent = text;
+    if (style.bold) {
+      element.style.fontWeight = "800";
+    }
+    if (style.italic) {
+      element.style.fontStyle = "italic";
+    }
+    if (style.underline) {
+      element.style.textDecoration = "underline";
+    }
+    if (style.color) {
+      element.style.color = style.color;
+    }
+    if (style.fontSize) {
+      element.style.fontSize = `${style.fontSize}px`;
+    }
+  }
+
+  let runText = "";
+  let runStyle = null;
+  let runKey = "";
+  characters.forEach((item) => {
+    const nextKey = getStyleKey(item);
+    if (runText && nextKey !== runKey) {
+      appendRun(runText, runStyle);
+      runText = "";
+    }
+
+    runText += item.char;
+    runStyle = item;
+    runKey = nextKey;
+  });
+
+  if (runText) {
+    appendRun(runText, runStyle);
   }
 }
 
@@ -846,14 +940,30 @@ function getTextAndMarksFromEditorBlock(element) {
   let text = "";
   const marks = [];
 
-  function walk(node, activeMark = null) {
+  function pushActiveMarks(activeStyle, start, end) {
+    if (end <= start) {
+      return;
+    }
+
+    ["bold", "italic", "underline", "superscript", "subscript"].forEach((type) => {
+      if (activeStyle[type]) {
+        marks.push({ type, start, end });
+      }
+    });
+    if (activeStyle.color) {
+      marks.push({ type: "color", start, end, value: activeStyle.color });
+    }
+    if (activeStyle.fontSize) {
+      marks.push({ type: "fontSize", start, end, value: activeStyle.fontSize });
+    }
+  }
+
+  function walk(node, activeStyle = {}) {
     if (node.nodeType === Node.TEXT_NODE) {
       const start = text.length;
       text += node.nodeValue || "";
       const end = text.length;
-      if (activeMark && end > start) {
-        marks.push({ type: activeMark, start, end });
-      }
+      pushActiveMarks(activeStyle, start, end);
       return;
     }
 
@@ -862,8 +972,33 @@ function getTextAndMarksFromEditorBlock(element) {
     }
 
     const tagName = node.tagName.toLowerCase();
-    const nextMark = tagName === "sup" ? "superscript" : tagName === "sub" ? "subscript" : activeMark;
-    node.childNodes.forEach((child) => walk(child, nextMark));
+    const nodeStyle = node.style || {};
+    const nextStyle = { ...activeStyle };
+    if (tagName === "b" || tagName === "strong" || Number.parseInt(nodeStyle.fontWeight, 10) >= 600) {
+      nextStyle.bold = true;
+    }
+    if (tagName === "i" || tagName === "em" || nodeStyle.fontStyle === "italic") {
+      nextStyle.italic = true;
+    }
+    if (tagName === "u" || String(nodeStyle.textDecorationLine || nodeStyle.textDecoration || "").includes("underline")) {
+      nextStyle.underline = true;
+    }
+    if (tagName === "sup") {
+      nextStyle.superscript = true;
+    }
+    if (tagName === "sub") {
+      nextStyle.subscript = true;
+    }
+    const color = node.getAttribute("color") || nodeStyle.color;
+    const normalizedColor = normalizeHexColor(color) || rgbToHex(color);
+    if (normalizedColor) {
+      nextStyle.color = normalizedColor;
+    }
+    const fontSize = Number.parseInt(nodeStyle.fontSize || "", 10);
+    if (Number.isFinite(fontSize)) {
+      nextStyle.fontSize = clamp(fontSize, FORMAT_SIZE_MIN, FORMAT_SIZE_MAX);
+    }
+    node.childNodes.forEach((child) => walk(child, nextStyle));
   }
 
   element.childNodes.forEach((child) => walk(child));
@@ -927,6 +1062,75 @@ function shiftActiveBlockIndent(editor, delta) {
   updateEditorStateFromDom(editor, editingState.key);
 }
 
+function getEditorSelection(editor) {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    return null;
+  }
+
+  const range = selection.getRangeAt(0);
+  const container = range.commonAncestorContainer.nodeType === Node.TEXT_NODE
+    ? range.commonAncestorContainer.parentElement
+    : range.commonAncestorContainer;
+  return editor.contains(container) ? selection : null;
+}
+
+function selectActiveBlockWhenCollapsed(editor) {
+  const selection = getEditorSelection(editor);
+  const activeBlock = getActiveEditorBlock(editor);
+  if (!activeBlock) {
+    return;
+  }
+
+  if (selection && !selection.isCollapsed) {
+    return;
+  }
+
+  const range = document.createRange();
+  range.selectNodeContents(activeBlock);
+  const nextSelection = window.getSelection();
+  nextSelection.removeAllRanges();
+  nextSelection.addRange(range);
+}
+
+function replaceFontSizeElements(editor, size) {
+  editor.querySelectorAll("font[size='7']").forEach((font) => {
+    const span = document.createElement("span");
+    span.style.fontSize = `${size}px`;
+    while (font.firstChild) {
+      span.appendChild(font.firstChild);
+    }
+    font.replaceWith(span);
+  });
+}
+
+function applyFontSize(editor, size) {
+  const safeSize = clamp(Number.parseInt(size, 10) || viewState.textSize, FORMAT_SIZE_MIN, FORMAT_SIZE_MAX);
+  selectActiveBlockWhenCollapsed(editor);
+  document.execCommand("fontSize", false, "7");
+  replaceFontSizeElements(editor, safeSize);
+}
+
+function getCurrentFormatSize(editor) {
+  const selection = getEditorSelection(editor);
+  const node = selection?.anchorNode?.nodeType === Node.TEXT_NODE
+    ? selection.anchorNode.parentElement
+    : selection?.anchorNode;
+  const styledNode = node?.closest?.("[style*='font-size']");
+  const inlineSize = Number.parseInt(styledNode?.style?.fontSize || "", 10);
+  if (Number.isFinite(inlineSize)) {
+    return clamp(inlineSize, FORMAT_SIZE_MIN, FORMAT_SIZE_MAX);
+  }
+
+  return clamp(viewState.textSize, FORMAT_SIZE_MIN, FORMAT_SIZE_MAX);
+}
+
+function applyTextColor(editor, color) {
+  const safeColor = normalizeHexColor(color) || "#1c2430";
+  selectActiveBlockWhenCollapsed(editor);
+  document.execCommand("foreColor", false, safeColor);
+}
+
 function runFormatAction(action, listStyle = null) {
   if (!editingState) {
     return;
@@ -935,8 +1139,15 @@ function runFormatAction(action, listStyle = null) {
   const { editor, key } = editingState;
   getActiveEditorBlock(editor)?.focus();
 
-  if (action === "superscript" || action === "subscript") {
+  if (action === "bold" || action === "italic" || action === "underline" || action === "superscript" || action === "subscript") {
+    selectActiveBlockWhenCollapsed(editor);
     document.execCommand(action);
+  } else if (action === "increase-size" || action === "decrease-size") {
+    const delta = action === "increase-size" ? FORMAT_SIZE_STEP : -FORMAT_SIZE_STEP;
+    applyFontSize(editor, getCurrentFormatSize(editor) + delta);
+  } else if (action === "clear-format") {
+    selectActiveBlockWhenCollapsed(editor);
+    document.execCommand("removeFormat");
   } else if (action === "heading") {
     setActiveBlockType(editor, BLOCK_TYPES.HEADING);
   } else if (action === "paragraph") {
@@ -955,6 +1166,30 @@ function runFormatAction(action, listStyle = null) {
   updateFormatToolbarState();
 }
 
+function setFormatSize(size) {
+  if (!editingState) {
+    return;
+  }
+
+  const { editor, key } = editingState;
+  getActiveEditorBlock(editor)?.focus();
+  applyFontSize(editor, size);
+  updateEditorStateFromDom(editor, key);
+  updateFormatToolbarState();
+}
+
+function setFormatColor(color) {
+  if (!editingState) {
+    return;
+  }
+
+  const { editor, key } = editingState;
+  getActiveEditorBlock(editor)?.focus();
+  applyTextColor(editor, color);
+  updateEditorStateFromDom(editor, key);
+  updateFormatToolbarState();
+}
+
 function wireFormatToolbar(toolbar) {
   if (!toolbar) {
     return;
@@ -967,6 +1202,17 @@ function wireFormatToolbar(toolbar) {
   toolbar.querySelectorAll("[data-format-action]").forEach((button) => {
     button.addEventListener("pointerdown", (event) => event.preventDefault());
     button.addEventListener("click", () => runFormatAction(button.dataset.formatAction, button.dataset.listStyle || null));
+  });
+  toolbar.querySelectorAll("[data-format-size]").forEach((select) => {
+    select.addEventListener("pointerdown", (event) => event.stopPropagation());
+    select.addEventListener("change", () => setFormatSize(select.value));
+  });
+  toolbar.querySelectorAll("[data-format-color]").forEach((input) => {
+    input.addEventListener("pointerdown", (event) => event.stopPropagation());
+    input.addEventListener("input", () => {
+      input.closest(".format-color-control")?.style.setProperty("color", input.value);
+      setFormatColor(input.value);
+    });
   });
 }
 
@@ -983,6 +1229,9 @@ function updateFormatToolbarState() {
   const disabled = !editingState;
   document.querySelectorAll(".text-format-toolbar [data-format-action]").forEach((button) => {
     button.disabled = disabled;
+  });
+  document.querySelectorAll(".text-format-toolbar [data-format-size], .text-format-toolbar [data-format-color]").forEach((control) => {
+    control.disabled = disabled;
   });
 }
 
@@ -1335,6 +1584,14 @@ function beginEditing(cell, note) {
     }
 
     const keyName = event.key.toLowerCase();
+    if ((event.ctrlKey || event.metaKey) && ["b", "i", "u"].includes(keyName)) {
+      event.preventDefault();
+      document.execCommand(keyName === "b" ? "bold" : keyName === "i" ? "italic" : "underline");
+      updateEditorStateFromDom(editor, key);
+      updateFormatToolbarState();
+      return;
+    }
+
     if ((event.ctrlKey || event.metaKey) && keyName === ".") {
       event.preventDefault();
       document.execCommand("superscript");
@@ -1675,6 +1932,10 @@ function updateSpacingControls() {
 }
 
 function updateShapeControls() {
+  if (!textSizeInput) {
+    return;
+  }
+
   textSizeInput.value = viewState.textSize;
 }
 
@@ -1877,7 +2138,9 @@ function renderConfig() {
   widthInput.value = state.dimensions.width;
   heightInput.value = state.dimensions.height;
   depthInput.value = state.dimensions.depth;
-  structureReadout.textContent = `当前共有 ${state.dimensions.depth} × ${state.dimensions.height} × ${state.dimensions.width} = ${count} 个板子`;
+  if (structureReadout) {
+    structureReadout.textContent = `当前共有 ${state.dimensions.depth} × ${state.dimensions.height} × ${state.dimensions.width} = ${count} 个板子`;
+  }
 }
 
 function syncDimensionsFromInputs({ allowFallback = true } = {}) {
@@ -1916,6 +2179,10 @@ function resetDimensionInputs() {
 }
 
 function syncShapeControlsFromInputs({ allowFallback = true, beforeSnapshot = null } = {}) {
+  if (!textSizeInput) {
+    return;
+  }
+
   if (editingState) {
     stopEditing({ commit: true });
   }
@@ -2115,38 +2382,40 @@ markerVisibilitySelect.addEventListener("change", () => {
   });
 });
 
-textSizeInput.addEventListener("focus", () => {
-  if (!textSizeChangeSnapshot) {
-    textSizeChangeSnapshot = createHistorySnapshot();
-  }
-});
-textSizeInput.addEventListener("pointerdown", () => {
-  if (!textSizeChangeSnapshot) {
-    textSizeChangeSnapshot = createHistorySnapshot();
-  }
-});
-textSizeInput.addEventListener("input", () => syncShapeControlsFromInputs({ allowFallback: false }));
-textSizeInput.addEventListener("change", () => {
-  syncShapeControlsFromInputs({ beforeSnapshot: textSizeChangeSnapshot });
-  textSizeChangeSnapshot = null;
-});
-textSizeInput.addEventListener("blur", () => {
-  syncShapeControlsFromInputs({ beforeSnapshot: textSizeChangeSnapshot });
-  textSizeChangeSnapshot = null;
-});
-textSizeInput.addEventListener("keydown", (event) => {
-  if (event.key !== "Enter") {
-    return;
-  }
+if (textSizeInput) {
+  textSizeInput.addEventListener("focus", () => {
+    if (!textSizeChangeSnapshot) {
+      textSizeChangeSnapshot = createHistorySnapshot();
+    }
+  });
+  textSizeInput.addEventListener("pointerdown", () => {
+    if (!textSizeChangeSnapshot) {
+      textSizeChangeSnapshot = createHistorySnapshot();
+    }
+  });
+  textSizeInput.addEventListener("input", () => syncShapeControlsFromInputs({ allowFallback: false }));
+  textSizeInput.addEventListener("change", () => {
+    syncShapeControlsFromInputs({ beforeSnapshot: textSizeChangeSnapshot });
+    textSizeChangeSnapshot = null;
+  });
+  textSizeInput.addEventListener("blur", () => {
+    syncShapeControlsFromInputs({ beforeSnapshot: textSizeChangeSnapshot });
+    textSizeChangeSnapshot = null;
+  });
+  textSizeInput.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") {
+      return;
+    }
 
-  event.preventDefault();
-  if (!textSizeChangeSnapshot) {
-    textSizeChangeSnapshot = createHistorySnapshot();
-  }
-  syncShapeControlsFromInputs({ beforeSnapshot: textSizeChangeSnapshot });
-  textSizeChangeSnapshot = null;
-  textSizeInput.blur();
-});
+    event.preventDefault();
+    if (!textSizeChangeSnapshot) {
+      textSizeChangeSnapshot = createHistorySnapshot();
+    }
+    syncShapeControlsFromInputs({ beforeSnapshot: textSizeChangeSnapshot });
+    textSizeChangeSnapshot = null;
+    textSizeInput.blur();
+  });
+}
 
 document.addEventListener("click", (event) => {
   if (editingState) {
