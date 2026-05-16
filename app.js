@@ -20,6 +20,11 @@ const CELL_SIZE_LIMITS = {
   height: { min: 48, max: 220 },
   depth: { min: 36, max: 220 }
 };
+const OPERATOR_SIZE_LIMITS = {
+  width: { min: 8, max: 80 },
+  height: { min: 8, max: 80 },
+  depth: { min: 8, max: 80 }
+};
 const TEXT_SIZE_MIN = 2;
 const TEXT_SIZE_MAX = 24;
 const GAP_MIN = gridSpec.gap;
@@ -70,10 +75,17 @@ const state = {
     heights: Array.from({ length: gridSpec.height }, () => gridSpec.cellSize.height),
     depths: Array.from({ length: gridSpec.depth }, () => gridSpec.cellSize.depth)
   },
+  operatorSize: {
+    width: 15,
+    height: 15,
+    depth: 15
+  },
+  operators: {},
   boards: {}
 };
 
 let cells = [];
+let operators = [];
 let editingState = null;
 
 const faces = ["front", "back", "right", "left", "top", "bottom"];
@@ -93,6 +105,9 @@ const textSizeInput = document.querySelector("#textSizeInput");
 const widthInput = document.querySelector("#widthInput");
 const heightInput = document.querySelector("#heightInput");
 const depthInput = document.querySelector("#depthInput");
+const operatorWidthInput = document.querySelector("#operatorWidthInput");
+const operatorHeightInput = document.querySelector("#operatorHeightInput");
+const operatorDepthInput = document.querySelector("#operatorDepthInput");
 const addWidthLeftButton = document.querySelector("#addWidthLeftButton");
 const removeWidthLeftButton = document.querySelector("#removeWidthLeftButton");
 const addWidthRightButton = document.querySelector("#addWidthRightButton");
@@ -148,6 +163,7 @@ const saveState = {
 
 let spacingChangeSnapshot = null;
 let textSizeChangeSnapshot = null;
+let operatorSizeChangeSnapshot = null;
 
 function getBoardKey(x, y, z) {
   return `${x}-${y}-${z}`;
@@ -159,6 +175,14 @@ function getBoardIndex(x, y, z) {
 
 function getBoardKeyFromCoord(coord) {
   return getBoardKey(coord.x, coord.y, coord.z);
+}
+
+function getOperatorKey(axis, x, y, z) {
+  return `${axis}-${x}-${y}-${z}`;
+}
+
+function getOperatorKeyFromSpec(spec) {
+  return getOperatorKey(spec.axis, spec.coord.x, spec.coord.y, spec.coord.z);
 }
 
 function getDefaultText(index) {
@@ -177,6 +201,8 @@ function createHistorySnapshot() {
   return {
     dimensions: cloneData(state.dimensions),
     sliceSizes: cloneData(state.sliceSizes),
+    operatorSize: cloneData(state.operatorSize),
+    operators: cloneData(state.operators),
     boards: cloneData(state.boards),
     view: {
       gap: viewState.gap,
@@ -244,6 +270,8 @@ function applyHistorySnapshot(snapshot) {
   historyState.isRestoring = true;
   state.dimensions = cloneData(snapshot.dimensions);
   state.sliceSizes = cloneData(snapshot.sliceSizes);
+  state.operatorSize = normalizeOperatorSize(snapshot.operatorSize || state.operatorSize);
+  state.operators = cloneData(snapshot.operators || {});
   state.boards = cloneData(snapshot.boards);
   gridSpec.width = state.dimensions.width;
   gridSpec.height = state.dimensions.height;
@@ -309,6 +337,8 @@ function createPersistedState() {
     savedAt: new Date().toISOString(),
     dimensions: cloneData(state.dimensions),
     sliceSizes: cloneData(state.sliceSizes),
+    operatorSize: cloneData(state.operatorSize),
+    operators: cloneData(state.operators),
     view: {
       gap: viewState.gap,
       rowRule: viewState.rowRule,
@@ -328,6 +358,8 @@ function applyPersistedState(payload) {
 
   state.dimensions = cloneData(payload.dimensions || state.dimensions);
   state.sliceSizes = cloneData(payload.sliceSizes || state.sliceSizes);
+  state.operatorSize = normalizeOperatorSize(payload.operatorSize || state.operatorSize);
+  state.operators = cloneData(payload.operators || {});
   state.boards = cloneData(payload.boards || {});
 
   if (payload.boardTexts && !payload.boards) {
@@ -499,6 +531,24 @@ function toCellSize(value, axis, fallback) {
 
   const limit = CELL_SIZE_LIMITS[axis];
   return clamp(parsed, limit.min, limit.max);
+}
+
+function toOperatorSize(value, axis, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed)) {
+    return fallback;
+  }
+
+  const limit = OPERATOR_SIZE_LIMITS[axis];
+  return clamp(parsed, limit.min, limit.max);
+}
+
+function normalizeOperatorSize(size = {}) {
+  return {
+    width: toOperatorSize(size.width, "width", 15),
+    height: toOperatorSize(size.height, "height", 15),
+    depth: toOperatorSize(size.depth, "depth", 15)
+  };
 }
 
 function toTextSize(value, fallback) {
@@ -727,12 +777,80 @@ function ensureBoards({ reset = false } = {}) {
   }
 }
 
+function getDefaultOperatorText(axis, coord) {
+  if (axis === "height") {
+    return coord.y === 0 ? "-" : "=";
+  }
+
+  if (axis === "width") {
+    return "+";
+  }
+
+  return ">";
+}
+
+function normalizeOperator(axis, coord, operator) {
+  return {
+    id: getOperatorKey(axis, coord.x, coord.y, coord.z),
+    axis,
+    coord: { ...coord },
+    text: String(operator?.text || getDefaultOperatorText(axis, coord)).slice(0, 3),
+    hidden: Boolean(operator?.hidden),
+    boxHidden: Boolean(operator?.boxHidden)
+  };
+}
+
+function ensureOperators() {
+  const nextOperators = {};
+  const specs = [];
+
+  for (let z = 0; z < state.dimensions.depth; z += 1) {
+    for (let y = 0; y < state.dimensions.height; y += 1) {
+      for (let x = 0; x < state.dimensions.width - 1; x += 1) {
+        specs.push({ axis: "width", coord: { x, y, z } });
+      }
+    }
+  }
+
+  for (let z = 0; z < state.dimensions.depth; z += 1) {
+    for (let y = 0; y < state.dimensions.height - 1; y += 1) {
+      for (let x = 0; x < state.dimensions.width; x += 1) {
+        specs.push({ axis: "height", coord: { x, y, z } });
+      }
+    }
+  }
+
+  for (let z = 0; z < state.dimensions.depth - 1; z += 1) {
+    for (let y = 0; y < state.dimensions.height; y += 1) {
+      for (let x = 0; x < state.dimensions.width; x += 1) {
+        specs.push({ axis: "depth", coord: { x, y, z } });
+      }
+    }
+  }
+
+  specs.forEach((spec) => {
+    const key = getOperatorKeyFromSpec(spec);
+    nextOperators[key] = normalizeOperator(spec.axis, spec.coord, state.operators[key]);
+  });
+
+  state.operators = nextOperators;
+}
+
+function buildOperators() {
+  ensureOperators();
+  operators = Object.values(state.operators).map((operator) => normalizeOperator(operator.axis, operator.coord, operator));
+}
+
 function getCellAt(x, y, z) {
   return cells.find((cell) => cell.coord.x === x && cell.coord.y === y && cell.coord.z === z);
 }
 
 function getCellById(cellId) {
   return cells.find((cell) => cell.id === cellId);
+}
+
+function getOperatorById(operatorId) {
+  return operators.find((operator) => operator.id === operatorId);
 }
 
 function buildCells() {
@@ -1374,18 +1492,28 @@ function selectCell(cell) {
   viewState.selectedId = cell.id;
   viewState.selectedIds = new Set([cell.id]);
   updateAllCellStates();
+  updateAllOperatorStates();
   updateSelection();
   updateWindowControlButtons();
 }
 
-function toggleCellSelection(cell) {
+function selectOperator(operator) {
+  viewState.selectedId = operator.id;
+  viewState.selectedIds = new Set([operator.id]);
+  updateAllCellStates();
+  updateAllOperatorStates();
+  updateSelection();
+  updateWindowControlButtons();
+}
+
+function toggleSelectableSelection(item) {
   const selectedIds = new Set(viewState.selectedIds);
 
-  if (selectedIds.has(cell.id)) {
-    selectedIds.delete(cell.id);
+  if (selectedIds.has(item.id)) {
+    selectedIds.delete(item.id);
   } else {
-    selectedIds.add(cell.id);
-    viewState.selectedId = cell.id;
+    selectedIds.add(item.id);
+    viewState.selectedId = item.id;
   }
 
   viewState.selectedIds = selectedIds;
@@ -1395,23 +1523,34 @@ function toggleCellSelection(cell) {
   }
 
   updateAllCellStates();
+  updateAllOperatorStates();
   updateSelection();
   updateWindowControlButtons();
 }
 
 function selectCellFromEvent(cell, event) {
   if (event.ctrlKey) {
-    toggleCellSelection(cell);
+    toggleSelectableSelection(cell);
     return;
   }
 
   selectCell(cell);
 }
 
+function selectOperatorFromEvent(operator, event) {
+  if (event.ctrlKey) {
+    toggleSelectableSelection(operator);
+    return;
+  }
+
+  selectOperator(operator);
+}
+
 function clearSelection() {
   viewState.selectedId = null;
   viewState.selectedIds.clear();
   updateAllCellStates();
+  updateAllOperatorStates();
   selectionText.textContent = "尚未选择。";
   updateWindowControlButtons();
 }
@@ -1422,21 +1561,31 @@ function getSelectedCells() {
     .filter(Boolean);
 }
 
+function getSelectedOperators() {
+  return Array.from(viewState.selectedIds)
+    .map((id) => getOperatorById(id))
+    .filter(Boolean);
+}
+
+function getSelectedItemCount() {
+  return getSelectedCells().length + getSelectedOperators().length;
+}
+
 function updateWindowControlButtons() {
   if (!minimizeBoardsButton || !maximizeBoardsButton || !minimizeBoxesButton || !maximizeBoxesButton) {
     return;
   }
 
-  const selectedCount = getSelectedCells().length;
+  const selectedCount = getSelectedItemCount();
   const disabled = selectedCount === 0;
   minimizeBoardsButton.disabled = disabled;
   maximizeBoardsButton.disabled = disabled;
   minimizeBoxesButton.disabled = disabled;
   maximizeBoxesButton.disabled = disabled;
-  minimizeBoardsButton.title = disabled ? "先选中一个或多个小长方体" : `隐藏 ${selectedCount} 个选中板子`;
-  maximizeBoardsButton.title = disabled ? "先选中一个或多个小长方体" : `恢复 ${selectedCount} 个选中板子`;
-  minimizeBoxesButton.title = disabled ? "先选中一个或多个小长方体" : `隐藏 ${selectedCount} 个选中方框`;
-  maximizeBoxesButton.title = disabled ? "先选中一个或多个小长方体" : `恢复 ${selectedCount} 个选中方框`;
+  minimizeBoardsButton.title = disabled ? "先选中一个或多个小长方体或迷你方框" : `隐藏 ${selectedCount} 个选中内容`;
+  maximizeBoardsButton.title = disabled ? "先选中一个或多个小长方体或迷你方框" : `恢复 ${selectedCount} 个选中内容`;
+  minimizeBoxesButton.title = disabled ? "先选中一个或多个小长方体或迷你方框" : `隐藏 ${selectedCount} 个选中方框`;
+  maximizeBoxesButton.title = disabled ? "先选中一个或多个小长方体或迷你方框" : `恢复 ${selectedCount} 个选中方框`;
 }
 
 function setSelectedBoardsVisibility(hidden) {
@@ -1445,7 +1594,8 @@ function setSelectedBoardsVisibility(hidden) {
   }
 
   const selectedCells = getSelectedCells();
-  if (selectedCells.length === 0) {
+  const selectedOperators = getSelectedOperators();
+  if (selectedCells.length === 0 && selectedOperators.length === 0) {
     updateWindowControlButtons();
     return;
   }
@@ -1456,6 +1606,12 @@ function setSelectedBoardsVisibility(hidden) {
     const board = normalizeBoard(key, state.boards[key]);
     state.boards[key] = {
       ...board,
+      hidden
+    };
+  });
+  selectedOperators.forEach((operator) => {
+    state.operators[operator.id] = {
+      ...normalizeOperator(operator.axis, operator.coord, state.operators[operator.id]),
       hidden
     };
   });
@@ -1471,7 +1627,8 @@ function setSelectedBoxesVisibility(boxHidden) {
   }
 
   const selectedCells = getSelectedCells();
-  if (selectedCells.length === 0) {
+  const selectedOperators = getSelectedOperators();
+  if (selectedCells.length === 0 && selectedOperators.length === 0) {
     updateWindowControlButtons();
     return;
   }
@@ -1482,6 +1639,12 @@ function setSelectedBoxesVisibility(boxHidden) {
     const board = normalizeBoard(key, state.boards[key]);
     state.boards[key] = {
       ...board,
+      boxHidden
+    };
+  });
+  selectedOperators.forEach((operator) => {
+    state.operators[operator.id] = {
+      ...normalizeOperator(operator.axis, operator.coord, state.operators[operator.id]),
       boxHidden
     };
   });
@@ -1907,9 +2070,136 @@ function renderCell(cell) {
   return element;
 }
 
+function getOperatorCenter(operator) {
+  const gap = getGap();
+  const { x, y, z } = operator.coord;
+  const baseCoord = { x, y, z };
+  const baseOrigin = getCellOrigin(baseCoord);
+  const baseSize = getCellSize(baseCoord);
+
+  if (operator.axis === "width") {
+    return {
+      x: baseOrigin.x + baseSize.width + gap / 2,
+      y: baseOrigin.y + baseSize.height / 2,
+      z: baseOrigin.z
+    };
+  }
+
+  if (operator.axis === "height") {
+    return {
+      x: baseOrigin.x + baseSize.width / 2,
+      y: baseOrigin.y + baseSize.height + gap / 2,
+      z: baseOrigin.z
+    };
+  }
+
+  return {
+    x: baseOrigin.x + baseSize.width / 2,
+    y: baseOrigin.y + baseSize.height / 2,
+    z: baseOrigin.z + baseSize.depth / 2 + gap / 2
+  };
+}
+
+function operatorTransform(operator) {
+  const center = getOperatorCenter(operator);
+  return `translate3d(${center.x - state.operatorSize.width / 2}px, ${center.y - state.operatorSize.height / 2}px, ${center.z}px)`;
+}
+
+function setOperatorText(operator, text) {
+  const nextText = String(text || "").trim().slice(0, 3);
+  if (!nextText || nextText === operator.text) {
+    return;
+  }
+
+  const beforeSnapshot = createHistorySnapshot();
+  state.operators[operator.id] = {
+    ...normalizeOperator(operator.axis, operator.coord, state.operators[operator.id]),
+    text: nextText
+  };
+  renderCells();
+  selectOperator(getOperatorById(operator.id));
+  commitHistorySnapshot(beforeSnapshot);
+}
+
+function renderOperator(operator) {
+  const element = document.createElement("article");
+  let pointerStart = null;
+  element.className = "operator-box";
+  element.dataset.operatorId = operator.id;
+  element.style.setProperty("--w", `${state.operatorSize.width}px`);
+  element.style.setProperty("--h", `${state.operatorSize.height}px`);
+  element.style.setProperty("--d", `${state.operatorSize.depth}px`);
+  element.style.setProperty("--ow", `${state.operatorSize.width}px`);
+  element.style.setProperty("--oh", `${state.operatorSize.height}px`);
+  element.style.setProperty("--od", `${state.operatorSize.depth}px`);
+  element.style.transform = operatorTransform(operator);
+  element.setAttribute("aria-label", `迷你方框 ${operator.text}`);
+
+  faces.forEach((faceName) => {
+    const face = document.createElement("span");
+    face.className = `face ${faceName}`;
+    element.appendChild(face);
+  });
+
+  const symbolAnchor = document.createElement("span");
+  symbolAnchor.className = "operator-symbol-anchor";
+  symbolAnchor.dataset.baseTransform = `translate3d(${state.operatorSize.width / 2}px, ${state.operatorSize.height / 2}px, 0)`;
+
+  const symbol = document.createElement("span");
+  symbol.className = "operator-symbol";
+  symbol.textContent = operator.text;
+  symbolAnchor.appendChild(symbol);
+  element.appendChild(symbolAnchor);
+
+  element.addEventListener("pointerdown", (event) => {
+    event.stopPropagation();
+    pointerStart = {
+      x: event.clientX,
+      y: event.clientY
+    };
+  });
+
+  element.addEventListener("pointerup", (event) => {
+    if (!pointerStart) {
+      return;
+    }
+
+    event.stopPropagation();
+    const deltaX = Math.abs(event.clientX - pointerStart.x);
+    const deltaY = Math.abs(event.clientY - pointerStart.y);
+    pointerStart = null;
+
+    if (deltaX + deltaY > 3) {
+      return;
+    }
+
+    if (editingState) {
+      stopEditing({ commit: true });
+    }
+    selectOperatorFromEvent(operator, event);
+  });
+
+  element.addEventListener("click", (event) => {
+    event.stopPropagation();
+  });
+  element.addEventListener("dblclick", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const nextText = window.prompt("输入运算符", operator.text);
+    if (nextText !== null) {
+      setOperatorText(operator, nextText);
+    }
+  });
+
+  updateOperatorClasses(element, operator);
+  return element;
+}
+
 function renderCells() {
   syncSliceSizesToDimensions();
+  state.operatorSize = normalizeOperatorSize(state.operatorSize);
   buildCells();
+  buildOperators();
   cuboid.replaceChildren();
   cuboid.classList.toggle("has-detail-preview", viewState.detailPreview);
   cuboid.classList.toggle("has-markers", viewState.markersVisible);
@@ -1917,6 +2207,9 @@ function renderCells() {
   setCuboidBounds();
   cells.forEach((cell) => {
     cuboid.appendChild(renderCell(cell));
+  });
+  operators.forEach((operator) => {
+    cuboid.appendChild(renderOperator(operator));
   });
   renderSliceControls();
   applyViewTransform();
@@ -1959,11 +2252,19 @@ function updateSpacingControls() {
 }
 
 function updateShapeControls() {
-  if (!textSizeInput) {
-    return;
+  if (textSizeInput) {
+    textSizeInput.value = viewState.textSize;
   }
 
-  textSizeInput.value = viewState.textSize;
+  if (operatorWidthInput) {
+    operatorWidthInput.value = state.operatorSize.width;
+  }
+  if (operatorHeightInput) {
+    operatorHeightInput.value = state.operatorSize.height;
+  }
+  if (operatorDepthInput) {
+    operatorDepthInput.value = state.operatorSize.depth;
+  }
 }
 
 function getModelTotals() {
@@ -2094,6 +2395,12 @@ function applyCellSpacing() {
       element.style.transform = cellTransform(cell.coord);
     }
   });
+  operators.forEach((operator) => {
+    const element = cuboid.querySelector(`[data-operator-id="${operator.id}"]`);
+    if (element) {
+      element.style.transform = operatorTransform(operator);
+    }
+  });
   renderSliceControls();
   updateSpacingControls();
   applyViewTransform();
@@ -2110,6 +2417,16 @@ function updateCellClasses(element, cell) {
   element.classList.toggle("is-box-hidden", cell.boxHidden);
 }
 
+function updateOperatorClasses(element, operator) {
+  if (!element) {
+    return;
+  }
+
+  element.classList.toggle("is-selected", viewState.selectedIds.has(operator.id));
+  element.classList.toggle("is-operator-hidden", operator.hidden);
+  element.classList.toggle("is-box-hidden", operator.boxHidden);
+}
+
 function updateAllCellStates() {
   cells.forEach((cell) => {
     const element = cuboid.querySelector(`[data-cell-id="${cell.id}"]`);
@@ -2117,19 +2434,32 @@ function updateAllCellStates() {
   });
 }
 
+function updateAllOperatorStates() {
+  operators.forEach((operator) => {
+    const element = cuboid.querySelector(`[data-operator-id="${operator.id}"]`);
+    updateOperatorClasses(element, operator);
+  });
+}
+
 function updateSelection() {
   const selectedCells = getSelectedCells();
-  if (selectedCells.length === 0) {
+  const selectedOperators = getSelectedOperators();
+  if (selectedCells.length === 0 && selectedOperators.length === 0) {
     selectionText.textContent = "尚未选择。";
     return;
   }
 
-  if (selectedCells.length === 1) {
+  if (selectedCells.length === 1 && selectedOperators.length === 0) {
     selectionText.textContent = getFullText(selectedCells[0]);
     return;
   }
 
-  selectionText.textContent = `已选择 ${selectedCells.length} 个板子。`;
+  if (selectedCells.length === 0 && selectedOperators.length === 1) {
+    selectionText.textContent = `迷你方框：${selectedOperators[0].text}`;
+    return;
+  }
+
+  selectionText.textContent = `已选择 ${getSelectedItemCount()} 个对象。`;
 }
 
 function applyViewTransform() {
@@ -2153,6 +2483,10 @@ function updateBillboards() {
 
   cuboid.querySelectorAll(".cell-billboard-label").forEach((label) => {
     label.style.transform = `${label.dataset.baseTransform} ${labelTransform}`;
+  });
+
+  cuboid.querySelectorAll(".operator-symbol-anchor").forEach((anchor) => {
+    anchor.style.transform = `${anchor.dataset.baseTransform} ${labelTransform}`;
   });
 
   sliceControls.querySelectorAll(".slice-control").forEach((control) => {
@@ -2334,6 +2668,33 @@ function syncShapeControlsFromInputs({ allowFallback = true, beforeSnapshot = nu
   }
 
   viewState.textSize = toTextSize(textSizeInput.value, viewState.textSize);
+  updateShapeControls();
+  renderCells();
+  commitHistorySnapshot(beforeSnapshot);
+}
+
+function syncOperatorSizeFromInputs({ allowFallback = true, beforeSnapshot = null } = {}) {
+  if (!operatorWidthInput || !operatorHeightInput || !operatorDepthInput) {
+    return;
+  }
+
+  if (editingState) {
+    stopEditing({ commit: true });
+  }
+
+  const nextWidth = Number.parseInt(operatorWidthInput.value, 10);
+  const nextHeight = Number.parseInt(operatorHeightInput.value, 10);
+  const nextDepth = Number.parseInt(operatorDepthInput.value, 10);
+
+  if (!allowFallback && [nextWidth, nextHeight, nextDepth].some((value) => Number.isNaN(value))) {
+    return;
+  }
+
+  state.operatorSize = {
+    width: toOperatorSize(operatorWidthInput.value, "width", state.operatorSize.width),
+    height: toOperatorSize(operatorHeightInput.value, "height", state.operatorSize.height),
+    depth: toOperatorSize(operatorDepthInput.value, "depth", state.operatorSize.depth)
+  };
   updateShapeControls();
   renderCells();
   commitHistorySnapshot(beforeSnapshot);
@@ -2617,6 +2978,38 @@ if (textSizeInput) {
     textSizeInput.blur();
   });
 }
+
+[operatorWidthInput, operatorHeightInput, operatorDepthInput].forEach((input) => {
+  if (!input) {
+    return;
+  }
+
+  const captureOperatorSizeSnapshot = () => {
+    if (!operatorSizeChangeSnapshot) {
+      operatorSizeChangeSnapshot = createHistorySnapshot();
+    }
+  };
+  const commitOperatorSizeChange = () => {
+    syncOperatorSizeFromInputs({ beforeSnapshot: operatorSizeChangeSnapshot });
+    operatorSizeChangeSnapshot = null;
+  };
+
+  input.addEventListener("focus", captureOperatorSizeSnapshot);
+  input.addEventListener("pointerdown", captureOperatorSizeSnapshot);
+  input.addEventListener("input", () => syncOperatorSizeFromInputs({ allowFallback: false }));
+  input.addEventListener("change", commitOperatorSizeChange);
+  input.addEventListener("blur", commitOperatorSizeChange);
+  input.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+
+    event.preventDefault();
+    captureOperatorSizeSnapshot();
+    commitOperatorSizeChange();
+    input.blur();
+  });
+});
 
 document.addEventListener("click", (event) => {
   if (editingState) {

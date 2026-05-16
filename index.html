@@ -180,6 +180,21 @@
                     <option value="local">每个板子的行数只服务于该板子</option>
                   </select>
                 </label>
+                <div class="operator-size-controls" aria-label="迷你方框尺寸">
+                  <span>迷你方框</span>
+                  <label>
+                    <span>长</span>
+                    <input id="operatorWidthInput" type="text" inputmode="numeric" pattern="[0-9]*" value="15">
+                  </label>
+                  <label>
+                    <span>宽</span>
+                    <input id="operatorHeightInput" type="text" inputmode="numeric" pattern="[0-9]*" value="15">
+                  </label>
+                  <label>
+                    <span>高</span>
+                    <input id="operatorDepthInput" type="text" inputmode="numeric" pattern="[0-9]*" value="15">
+                  </label>
+                </div>
                 <label class="rule-menu" aria-label="放大白板预览">
                   <select id="detailPreviewSelect">
                     <option value="off" selected>放大白板预览：关</option>

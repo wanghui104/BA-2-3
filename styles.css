@@ -433,6 +433,17 @@ button {
   cursor: pointer;
 }
 
+.operator-box {
+  --w: 15px;
+  --h: 15px;
+  --d: 15px;
+  position: absolute;
+  width: var(--w);
+  height: var(--h);
+  transform-style: preserve-3d;
+  cursor: pointer;
+}
+
 .face {
   position: absolute;
   border: 1px solid var(--edge);
@@ -518,6 +529,38 @@ button {
 .edge-label.is-max-y-max-z {
   color: var(--green);
   font-weight: 850;
+}
+
+.operator-symbol-anchor {
+  position: absolute;
+  z-index: 3;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  transform-style: preserve-3d;
+}
+
+.operator-symbol {
+  position: absolute;
+  left: 0;
+  top: 0;
+  min-width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(28, 36, 48, 0.16);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #1c2430;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  transform-origin: center center;
+  transform-style: preserve-3d;
 }
 
 .cell-number,
@@ -820,6 +863,22 @@ button {
   visibility: hidden;
 }
 
+.operator-box.is-selected .face {
+  border-color: rgba(209, 73, 91, 0.92);
+  box-shadow:
+    inset 0 0 18px rgba(255, 255, 255, 0.5),
+    0 0 0 1px rgba(209, 73, 91, 0.24);
+}
+
+.operator-box.is-selected .operator-symbol {
+  border-color: rgba(209, 73, 91, 0.58);
+}
+
+.operator-box.is-operator-hidden .operator-symbol {
+  opacity: 0;
+  visibility: hidden;
+}
+
 .cell.is-box-hidden .face,
 .cell.is-box-hidden .cell-billboard-label,
 .cell.is-box-hidden .link-pin {
@@ -828,6 +887,20 @@ button {
 }
 
 .cell.is-box-hidden.is-selected .face {
+  border-color: rgba(209, 73, 91, 0.82);
+  border-style: dotted;
+  background: transparent;
+  opacity: 1;
+  visibility: visible;
+  box-shadow: none;
+}
+
+.operator-box.is-box-hidden .face {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.operator-box.is-box-hidden.is-selected .face {
   border-color: rgba(209, 73, 91, 0.82);
   border-style: dotted;
   background: transparent;
@@ -1299,6 +1372,60 @@ button {
 .rule-menu select:focus-visible {
   outline: 2px solid rgba(42, 157, 143, 0.48);
   outline-offset: 2px;
+}
+
+.operator-size-controls {
+  display: grid;
+  grid-template-columns: auto repeat(3, minmax(0, 1fr));
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 5px 7px;
+  border: 1px solid rgba(28, 36, 48, 0.14);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: 0 12px 26px rgba(38, 47, 64, 0.12);
+  color: #263241;
+}
+
+.operator-size-controls > span {
+  font-size: 11px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.operator-size-controls label {
+  display: grid;
+  grid-template-columns: auto minmax(22px, 1fr);
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.operator-size-controls label span {
+  color: #344054;
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.operator-size-controls input {
+  width: 100%;
+  min-width: 0;
+  height: 20px;
+  border: 1px solid rgba(28, 36, 48, 0.14);
+  border-radius: 5px;
+  background: #ffffff;
+  color: #223044;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 850;
+  text-align: center;
+}
+
+.operator-size-controls input:focus-visible {
+  border-color: rgba(42, 157, 143, 0.65);
+  outline: 2px solid rgba(42, 157, 143, 0.18);
+  outline-offset: 1px;
 }
 
 .shape-controls {
