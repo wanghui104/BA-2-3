@@ -447,23 +447,34 @@ function getCellSize(coord) {
   };
 }
 
+function getCellOrigin(coord) {
+  const size = getCellSize(coord);
+  return {
+    x: getSliceOffset(state.sliceSizes.widths, coord.x),
+    y: getSliceOffset(state.sliceSizes.heights, coord.y),
+    z: getSliceOffset(state.sliceSizes.depths, coord.z) + size.depth / 2
+  };
+}
+
 function getGlobalEdgePoint(coord, edgeNumber) {
   const size = getCellSize(coord);
+  const origin = getCellOrigin(coord);
   const edge = getEdgeLabelSpecs(size).find((item) => item.number === edgeNumber);
   return {
-    x: getSliceOffset(state.sliceSizes.widths, coord.x) + edge.x,
-    y: getSliceOffset(state.sliceSizes.heights, coord.y) + edge.y,
-    z: getSliceOffset(state.sliceSizes.depths, coord.z) + edge.z
+    x: origin.x + edge.x,
+    y: origin.y + edge.y,
+    z: origin.z + edge.z
   };
 }
 
 function isMaxYMaxZEdge(coord, edge) {
   const size = getCellSize(coord);
+  const origin = getCellOrigin(coord);
   const totals = getModelTotals();
-  const globalY = getSliceOffset(state.sliceSizes.heights, coord.y) + edge.y;
-  const globalZ = getSliceOffset(state.sliceSizes.depths, coord.z) + edge.z;
+  const globalY = origin.y + edge.y;
+  const globalZ = origin.z + edge.z;
   const maxZ = getSliceOffset(state.sliceSizes.depths, state.dimensions.depth - 1)
-    + state.sliceSizes.depths[state.dimensions.depth - 1] / 2
+    + state.sliceSizes.depths[state.dimensions.depth - 1]
     + 1;
 
   return Math.abs(globalY - totals.height) < 0.01
@@ -1931,9 +1942,7 @@ function setCuboidBounds() {
 }
 
 function cellTransform(coord) {
-  const x = getSliceOffset(state.sliceSizes.widths, coord.x);
-  const y = getSliceOffset(state.sliceSizes.heights, coord.y);
-  const z = getSliceOffset(state.sliceSizes.depths, coord.z);
+  const { x, y, z } = getCellOrigin(coord);
 
   return `translate3d(${x}px, ${y}px, ${z}px)`;
 }
