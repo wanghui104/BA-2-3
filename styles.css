@@ -175,7 +175,7 @@ button {
 .top-format-toolbar {
   position: fixed;
   left: 16px;
-  top: 144px;
+  top: 178px;
   z-index: 12;
 }
 
@@ -907,6 +907,10 @@ button {
   opacity: 1;
   visibility: visible;
   box-shadow: none;
+}
+
+.operator-box.is-box-hidden.is-operator-hidden {
+  pointer-events: none;
 }
 
 .link-pin {

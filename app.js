@@ -129,6 +129,8 @@ const minimizeBoardsButton = document.querySelector("#minimizeBoardsButton");
 const maximizeBoardsButton = document.querySelector("#maximizeBoardsButton");
 const minimizeBoxesButton = document.querySelector("#minimizeBoxesButton");
 const maximizeBoxesButton = document.querySelector("#maximizeBoxesButton");
+const showMiniOperatorButton = document.querySelector("#showMiniOperatorButton");
+const hideMiniOperatorButton = document.querySelector("#hideMiniOperatorButton");
 const topFormatToolbar = document.querySelector("#topFormatToolbar");
 
 const viewState = {
@@ -1571,21 +1573,69 @@ function getSelectedItemCount() {
   return getSelectedCells().length + getSelectedOperators().length;
 }
 
+function getOperatorBetweenCells(firstCell, secondCell) {
+  const first = firstCell.coord;
+  const second = secondCell.coord;
+  const delta = {
+    x: second.x - first.x,
+    y: second.y - first.y,
+    z: second.z - first.z
+  };
+  const distance = Math.abs(delta.x) + Math.abs(delta.y) + Math.abs(delta.z);
+  if (distance !== 1) {
+    return null;
+  }
+
+  let axis = null;
+  const coord = {
+    x: Math.min(first.x, second.x),
+    y: Math.min(first.y, second.y),
+    z: Math.min(first.z, second.z)
+  };
+
+  if (delta.x !== 0) {
+    axis = "width";
+  } else if (delta.y !== 0) {
+    axis = "height";
+  } else {
+    axis = "depth";
+  }
+
+  const key = getOperatorKey(axis, coord.x, coord.y, coord.z);
+  const operator = state.operators[key] || getOperatorById(key);
+  return operator ? normalizeOperator(axis, coord, operator) : null;
+}
+
+function getOperatorBetweenSelectedCells() {
+  const selectedCells = getSelectedCells();
+  if (selectedCells.length !== 2 || getSelectedOperators().length > 0) {
+    return null;
+  }
+
+  return getOperatorBetweenCells(selectedCells[0], selectedCells[1]);
+}
+
 function updateWindowControlButtons() {
-  if (!minimizeBoardsButton || !maximizeBoardsButton || !minimizeBoxesButton || !maximizeBoxesButton) {
+  if (!minimizeBoardsButton || !maximizeBoardsButton || !minimizeBoxesButton || !maximizeBoxesButton || !showMiniOperatorButton || !hideMiniOperatorButton) {
     return;
   }
 
   const selectedCount = getSelectedItemCount();
   const disabled = selectedCount === 0;
+  const adjacentOperator = getOperatorBetweenSelectedCells();
+  const miniOperatorDisabled = !adjacentOperator;
   minimizeBoardsButton.disabled = disabled;
   maximizeBoardsButton.disabled = disabled;
   minimizeBoxesButton.disabled = disabled;
   maximizeBoxesButton.disabled = disabled;
+  showMiniOperatorButton.disabled = miniOperatorDisabled;
+  hideMiniOperatorButton.disabled = miniOperatorDisabled;
   minimizeBoardsButton.title = disabled ? "先选中一个或多个小长方体或迷你方框" : `隐藏 ${selectedCount} 个选中内容`;
   maximizeBoardsButton.title = disabled ? "先选中一个或多个小长方体或迷你方框" : `恢复 ${selectedCount} 个选中内容`;
   minimizeBoxesButton.title = disabled ? "先选中一个或多个小长方体或迷你方框" : `隐藏 ${selectedCount} 个选中方框`;
   maximizeBoxesButton.title = disabled ? "先选中一个或多个小长方体或迷你方框" : `恢复 ${selectedCount} 个选中方框`;
+  showMiniOperatorButton.title = miniOperatorDisabled ? "按住 Ctrl 选中两个相邻小长方体" : "显示这两个相邻方框之间的迷你框";
+  hideMiniOperatorButton.title = miniOperatorDisabled ? "按住 Ctrl 选中两个相邻小长方体" : "隐藏这两个相邻方框之间的迷你框";
 }
 
 function setSelectedBoardsVisibility(hidden) {
@@ -1648,6 +1698,29 @@ function setSelectedBoxesVisibility(boxHidden) {
       boxHidden
     };
   });
+  renderCells();
+  updateSelection();
+  updateWindowControlButtons();
+  commitHistorySnapshot(beforeSnapshot);
+}
+
+function setSelectedMiniOperatorVisibility(visible) {
+  if (editingState) {
+    stopEditing({ commit: true });
+  }
+
+  const operator = getOperatorBetweenSelectedCells();
+  if (!operator) {
+    updateWindowControlButtons();
+    return;
+  }
+
+  const beforeSnapshot = createHistorySnapshot();
+  state.operators[operator.id] = {
+    ...normalizeOperator(operator.axis, operator.coord, state.operators[operator.id]),
+    hidden: !visible,
+    boxHidden: !visible
+  };
   renderCells();
   updateSelection();
   updateWindowControlButtons();
@@ -2823,6 +2896,16 @@ minimizeBoxesButton.addEventListener("click", (event) => {
 maximizeBoxesButton.addEventListener("click", (event) => {
   event.stopPropagation();
   setSelectedBoxesVisibility(false);
+});
+
+showMiniOperatorButton.addEventListener("click", (event) => {
+  event.stopPropagation();
+  setSelectedMiniOperatorVisibility(true);
+});
+
+hideMiniOperatorButton.addEventListener("click", (event) => {
+  event.stopPropagation();
+  setSelectedMiniOperatorVisibility(false);
 });
 
 addWidthLeftButton?.addEventListener("click", (event) => {
