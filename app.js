@@ -46,6 +46,8 @@ const FORMAT_SIZE_MAX = 24;
 const FORMAT_SIZE_STEP = 1;
 const INDENT_MIN = 0;
 const INDENT_MAX = 4;
+const ARROW_ENDPOINT_OVERLAP = 5;
+const ARROW_MIN_LENGTH = 28;
 const BULLET_LIST_STYLES = ["disc", "circle", "diamond"];
 const NUMBERED_LIST_STYLES = ["decimal", "lower-alpha", "lower-roman"];
 
@@ -81,11 +83,13 @@ const state = {
     depth: 15
   },
   operators: {},
+  arrows: {},
   boards: {}
 };
 
 let cells = [];
 let operators = [];
+let arrows = [];
 let editingState = null;
 
 const faces = ["front", "back", "right", "left", "top", "bottom"];
@@ -131,6 +135,9 @@ const minimizeBoxesButton = document.querySelector("#minimizeBoxesButton");
 const maximizeBoxesButton = document.querySelector("#maximizeBoxesButton");
 const showMiniOperatorButton = document.querySelector("#showMiniOperatorButton");
 const hideMiniOperatorButton = document.querySelector("#hideMiniOperatorButton");
+const showArrowButton = document.querySelector("#showArrowButton");
+const hideArrowButton = document.querySelector("#hideArrowButton");
+const arrowColorInput = document.querySelector("#arrowColorInput");
 const topFormatToolbar = document.querySelector("#topFormatToolbar");
 
 const viewState = {
@@ -142,6 +149,7 @@ const viewState = {
   detailPreview: false,
   markersVisible: false,
   textSize: 10,
+  arrowColor: "#357ded",
   selectedId: null,
   selectedIds: new Set(),
   dragging: false,
@@ -179,12 +187,29 @@ function getBoardKeyFromCoord(coord) {
   return getBoardKey(coord.x, coord.y, coord.z);
 }
 
+function getCoordFromBoardKey(key) {
+  const parts = String(key || "").split("-").map((part) => Number.parseInt(part, 10));
+  if (parts.length !== 3 || parts.some((part) => Number.isNaN(part))) {
+    return null;
+  }
+
+  return {
+    x: parts[0],
+    y: parts[1],
+    z: parts[2]
+  };
+}
+
 function getOperatorKey(axis, x, y, z) {
   return `${axis}-${x}-${y}-${z}`;
 }
 
 function getOperatorKeyFromSpec(spec) {
   return getOperatorKey(spec.axis, spec.coord.x, spec.coord.y, spec.coord.z);
+}
+
+function getArrowKey(fromKey, toKey) {
+  return `${fromKey}->${toKey}`;
 }
 
 function getDefaultText(index) {
@@ -205,13 +230,15 @@ function createHistorySnapshot() {
     sliceSizes: cloneData(state.sliceSizes),
     operatorSize: cloneData(state.operatorSize),
     operators: cloneData(state.operators),
+    arrows: cloneData(state.arrows),
     boards: cloneData(state.boards),
     view: {
       gap: viewState.gap,
       rowRule: viewState.rowRule,
       detailPreview: viewState.detailPreview,
       markersVisible: viewState.markersVisible,
-      textSize: viewState.textSize
+      textSize: viewState.textSize,
+      arrowColor: viewState.arrowColor
     }
   };
 }
@@ -274,6 +301,7 @@ function applyHistorySnapshot(snapshot) {
   state.sliceSizes = cloneData(snapshot.sliceSizes);
   state.operatorSize = normalizeOperatorSize(snapshot.operatorSize || state.operatorSize);
   state.operators = cloneData(snapshot.operators || {});
+  state.arrows = cloneData(snapshot.arrows || {});
   state.boards = cloneData(snapshot.boards);
   gridSpec.width = state.dimensions.width;
   gridSpec.height = state.dimensions.height;
@@ -283,12 +311,16 @@ function applyHistorySnapshot(snapshot) {
   viewState.detailPreview = snapshot.view.detailPreview;
   viewState.markersVisible = snapshot.view.markersVisible;
   viewState.textSize = snapshot.view.textSize;
+  viewState.arrowColor = normalizeHexColor(snapshot.view.arrowColor) || viewState.arrowColor;
   viewState.selectedId = null;
   viewState.selectedIds.clear();
 
   rowRuleSelect.value = viewState.rowRule;
   detailPreviewSelect.value = viewState.detailPreview ? "on" : "off";
   markerVisibilitySelect.value = viewState.markersVisible ? "on" : "off";
+  if (arrowColorInput) {
+    arrowColorInput.value = viewState.arrowColor;
+  }
   updateShapeControls();
   renderCells();
   renderConfig();
@@ -341,12 +373,14 @@ function createPersistedState() {
     sliceSizes: cloneData(state.sliceSizes),
     operatorSize: cloneData(state.operatorSize),
     operators: cloneData(state.operators),
+    arrows: cloneData(state.arrows),
     view: {
       gap: viewState.gap,
       rowRule: viewState.rowRule,
       detailPreview: viewState.detailPreview,
       markersVisible: viewState.markersVisible,
-      textSize: viewState.textSize
+      textSize: viewState.textSize,
+      arrowColor: viewState.arrowColor
     },
     boards: cloneData(state.boards)
   };
@@ -362,6 +396,7 @@ function applyPersistedState(payload) {
   state.sliceSizes = cloneData(payload.sliceSizes || state.sliceSizes);
   state.operatorSize = normalizeOperatorSize(payload.operatorSize || state.operatorSize);
   state.operators = cloneData(payload.operators || {});
+  state.arrows = cloneData(payload.arrows || {});
   state.boards = cloneData(payload.boards || {});
 
   if (payload.boardTexts && !payload.boards) {
@@ -381,6 +416,7 @@ function applyPersistedState(payload) {
     viewState.detailPreview = Boolean(payload.view.detailPreview);
     viewState.markersVisible = Boolean(payload.view.markersVisible);
     viewState.textSize = typeof payload.view.textSize === "number" ? payload.view.textSize : viewState.textSize;
+    viewState.arrowColor = normalizeHexColor(payload.view.arrowColor) || viewState.arrowColor;
   }
 
   ensureBoards();
@@ -843,12 +879,61 @@ function buildOperators() {
   operators = Object.values(state.operators).map((operator) => normalizeOperator(operator.axis, operator.coord, operator));
 }
 
+function isBoardKeyInBounds(key) {
+  const coord = getCoordFromBoardKey(key);
+  return Boolean(coord)
+    && coord.x >= 0
+    && coord.x < state.dimensions.width
+    && coord.y >= 0
+    && coord.y < state.dimensions.height
+    && coord.z >= 0
+    && coord.z < state.dimensions.depth;
+}
+
+function normalizeArrow(arrow) {
+  const from = String(arrow?.from || "");
+  const to = String(arrow?.to || "");
+  if (!from || !to || from === to || !isBoardKeyInBounds(from) || !isBoardKeyInBounds(to)) {
+    return null;
+  }
+
+  const color = normalizeHexColor(arrow?.color) || viewState.arrowColor;
+  return {
+    id: getArrowKey(from, to),
+    from,
+    to,
+    color,
+    hidden: Boolean(arrow?.hidden)
+  };
+}
+
+function ensureArrows() {
+  const nextArrows = {};
+  Object.values(state.arrows || {}).forEach((arrow) => {
+    const normalizedArrow = normalizeArrow(arrow);
+    if (normalizedArrow) {
+      nextArrows[normalizedArrow.id] = normalizedArrow;
+    }
+  });
+  state.arrows = nextArrows;
+}
+
+function buildArrows() {
+  ensureArrows();
+  arrows = Object.values(state.arrows).map((arrow) => normalizeArrow(arrow)).filter(Boolean);
+}
+
 function getCellAt(x, y, z) {
   return cells.find((cell) => cell.coord.x === x && cell.coord.y === y && cell.coord.z === z);
 }
 
 function getCellById(cellId) {
   return cells.find((cell) => cell.id === cellId);
+}
+
+function getCellByBoardKey(key) {
+  const coord = getCoordFromBoardKey(key);
+  return coord ? getCellAt(coord.x, coord.y, coord.z) : null;
 }
 
 function getOperatorById(operatorId) {
@@ -1495,6 +1580,7 @@ function selectCell(cell) {
   viewState.selectedIds = new Set([cell.id]);
   updateAllCellStates();
   updateAllOperatorStates();
+  updateAllArrowStates();
   updateSelection();
   updateWindowControlButtons();
 }
@@ -1504,6 +1590,7 @@ function selectOperator(operator) {
   viewState.selectedIds = new Set([operator.id]);
   updateAllCellStates();
   updateAllOperatorStates();
+  updateAllArrowStates();
   updateSelection();
   updateWindowControlButtons();
 }
@@ -1526,6 +1613,7 @@ function toggleSelectableSelection(item) {
 
   updateAllCellStates();
   updateAllOperatorStates();
+  updateAllArrowStates();
   updateSelection();
   updateWindowControlButtons();
 }
@@ -1553,11 +1641,18 @@ function clearSelection() {
   viewState.selectedIds.clear();
   updateAllCellStates();
   updateAllOperatorStates();
+  updateAllArrowStates();
   selectionText.textContent = "尚未选择。";
   updateWindowControlButtons();
 }
 
 function getSelectedCells() {
+  return Array.from(viewState.selectedIds)
+    .map((id) => getCellById(id))
+    .filter(Boolean);
+}
+
+function getSelectedCellSequence() {
   return Array.from(viewState.selectedIds)
     .map((id) => getCellById(id))
     .filter(Boolean);
@@ -1571,6 +1666,22 @@ function getSelectedOperators() {
 
 function getSelectedItemCount() {
   return getSelectedCells().length + getSelectedOperators().length;
+}
+
+function getSelectedArrowPairs() {
+  const selectedCells = getSelectedCellSequence();
+  if (selectedCells.length < 2 || getSelectedOperators().length > 0) {
+    return [];
+  }
+
+  const pairs = [];
+  for (let index = 0; index < selectedCells.length - 1; index += 1) {
+    pairs.push({
+      from: getBoardKeyFromCoord(selectedCells[index].coord),
+      to: getBoardKeyFromCoord(selectedCells[index + 1].coord)
+    });
+  }
+  return pairs;
 }
 
 function getOperatorBetweenCells(firstCell, secondCell) {
@@ -1616,7 +1727,7 @@ function getOperatorBetweenSelectedCells() {
 }
 
 function updateWindowControlButtons() {
-  if (!minimizeBoardsButton || !maximizeBoardsButton || !minimizeBoxesButton || !maximizeBoxesButton || !showMiniOperatorButton || !hideMiniOperatorButton) {
+  if (!minimizeBoardsButton || !maximizeBoardsButton || !minimizeBoxesButton || !maximizeBoxesButton || !showMiniOperatorButton || !hideMiniOperatorButton || !showArrowButton || !hideArrowButton) {
     return;
   }
 
@@ -1624,18 +1735,24 @@ function updateWindowControlButtons() {
   const disabled = selectedCount === 0;
   const adjacentOperator = getOperatorBetweenSelectedCells();
   const miniOperatorDisabled = !adjacentOperator;
+  const arrowPairs = getSelectedArrowPairs();
+  const arrowButtonsDisabled = arrowPairs.length === 0;
   minimizeBoardsButton.disabled = disabled;
   maximizeBoardsButton.disabled = disabled;
   minimizeBoxesButton.disabled = disabled;
   maximizeBoxesButton.disabled = disabled;
   showMiniOperatorButton.disabled = miniOperatorDisabled;
   hideMiniOperatorButton.disabled = miniOperatorDisabled;
+  showArrowButton.disabled = arrowButtonsDisabled;
+  hideArrowButton.disabled = arrowButtonsDisabled;
   minimizeBoardsButton.title = disabled ? "先选中一个或多个小长方体或迷你方框" : `隐藏 ${selectedCount} 个选中内容`;
   maximizeBoardsButton.title = disabled ? "先选中一个或多个小长方体或迷你方框" : `恢复 ${selectedCount} 个选中内容`;
   minimizeBoxesButton.title = disabled ? "先选中一个或多个小长方体或迷你方框" : `隐藏 ${selectedCount} 个选中方框`;
   maximizeBoxesButton.title = disabled ? "先选中一个或多个小长方体或迷你方框" : `恢复 ${selectedCount} 个选中方框`;
   showMiniOperatorButton.title = miniOperatorDisabled ? "按住 Ctrl 选中两个相邻小长方体" : "显示这两个相邻方框之间的迷你框";
   hideMiniOperatorButton.title = miniOperatorDisabled ? "按住 Ctrl 选中两个相邻小长方体" : "隐藏这两个相邻方框之间的迷你框";
+  showArrowButton.title = arrowButtonsDisabled ? "按住 Ctrl 按顺序选中两个或更多小长方体" : `按选择顺序创建 ${arrowPairs.length} 条箭头`;
+  hideArrowButton.title = arrowButtonsDisabled ? "按住 Ctrl 按顺序选中两个或更多小长方体" : `按选择顺序去掉 ${arrowPairs.length} 条箭头`;
 }
 
 function setSelectedBoardsVisibility(hidden) {
@@ -1724,6 +1841,71 @@ function setSelectedMiniOperatorVisibility(visible) {
   renderCells();
   updateSelection();
   updateWindowControlButtons();
+  commitHistorySnapshot(beforeSnapshot);
+}
+
+function setSelectedArrowsVisibility(visible) {
+  if (editingState) {
+    stopEditing({ commit: true });
+  }
+
+  const pairs = getSelectedArrowPairs();
+  if (pairs.length === 0) {
+    updateWindowControlButtons();
+    return;
+  }
+
+  const beforeSnapshot = createHistorySnapshot();
+  pairs.forEach((pair) => {
+    const key = getArrowKey(pair.from, pair.to);
+    if (visible) {
+      state.arrows[key] = {
+        id: key,
+        from: pair.from,
+        to: pair.to,
+        color: normalizeHexColor(viewState.arrowColor) || "#357ded",
+        hidden: false
+      };
+      return;
+    }
+
+    if (state.arrows[key]) {
+      const arrow = normalizeArrow(state.arrows[key]);
+      if (!arrow) {
+        return;
+      }
+      state.arrows[key] = {
+        ...arrow,
+        hidden: true
+      };
+    }
+  });
+  renderCells();
+  updateSelection();
+  updateWindowControlButtons();
+  commitHistorySnapshot(beforeSnapshot);
+}
+
+function setSelectedArrowsColor(color) {
+  const nextColor = normalizeHexColor(color);
+  if (!nextColor) {
+    return;
+  }
+
+  viewState.arrowColor = nextColor;
+  const pairs = getSelectedArrowPairs();
+  const beforeSnapshot = createHistorySnapshot();
+  pairs.forEach((pair) => {
+    const key = getArrowKey(pair.from, pair.to);
+    const arrow = normalizeArrow(state.arrows[key]);
+    if (arrow && !arrow.hidden) {
+      state.arrows[key] = {
+        ...arrow,
+        color: nextColor
+      };
+    }
+  });
+  renderCells();
   commitHistorySnapshot(beforeSnapshot);
 }
 
@@ -2268,11 +2450,332 @@ function renderOperator(operator) {
   return element;
 }
 
+function getCellCenter(cell) {
+  const origin = getCellOrigin(cell.coord);
+  const size = getCellSize(cell.coord);
+  return {
+    x: origin.x + size.width / 2,
+    y: origin.y + size.height / 2,
+    z: origin.z
+  };
+}
+
+function getArrowEndpoints(arrow) {
+  const fromCell = getCellByBoardKey(arrow.from);
+  const toCell = getCellByBoardKey(arrow.to);
+  if (!fromCell || !toCell) {
+    return null;
+  }
+
+  return {
+    from: getCellCenter(fromCell),
+    to: getCellCenter(toCell),
+    fromCell,
+    toCell
+  };
+}
+
+function getCellBounds(cell) {
+  const origin = getCellOrigin(cell.coord);
+  const size = getCellSize(cell.coord);
+  return {
+    minX: origin.x,
+    maxX: origin.x + size.width,
+    minY: origin.y,
+    maxY: origin.y + size.height,
+    minZ: origin.z - size.depth / 2,
+    maxZ: origin.z + size.depth / 2
+  };
+}
+
+function movePointAlongDirection(point, direction, distance) {
+  return {
+    x: point.x + direction.x * distance,
+    y: point.y + direction.y * distance,
+    z: point.z + direction.z * distance
+  };
+}
+
+function getSegmentBoxIntersectionRange(start, end, bounds) {
+  const delta = {
+    x: end.x - start.x,
+    y: end.y - start.y,
+    z: end.z - start.z
+  };
+  let enter = 0;
+  let exit = 1;
+
+  const axes = [
+    { coord: "x", min: bounds.minX, max: bounds.maxX },
+    { coord: "y", min: bounds.minY, max: bounds.maxY },
+    { coord: "z", min: bounds.minZ, max: bounds.maxZ }
+  ];
+
+  for (const axis of axes) {
+    const startValue = start[axis.coord];
+    const deltaValue = delta[axis.coord];
+    if (Math.abs(deltaValue) < 0.0001) {
+      if (startValue < axis.min || startValue > axis.max) {
+        return null;
+      }
+      continue;
+    }
+
+    const first = (axis.min - startValue) / deltaValue;
+    const second = (axis.max - startValue) / deltaValue;
+    const axisEnter = Math.min(first, second);
+    const axisExit = Math.max(first, second);
+    enter = Math.max(enter, axisEnter);
+    exit = Math.min(exit, axisExit);
+
+    if (enter > exit) {
+      return null;
+    }
+  }
+
+  return {
+    enter,
+    exit
+  };
+}
+
+function getPointOnSegment(start, end, t) {
+  return {
+    x: start.x + (end.x - start.x) * t,
+    y: start.y + (end.y - start.y) * t,
+    z: start.z + (end.z - start.z) * t
+  };
+}
+
+function dotProduct(first, second) {
+  return first.x * second.x + first.y * second.y + first.z * second.z;
+}
+
+function crossProduct(first, second) {
+  return {
+    x: first.y * second.z - first.z * second.y,
+    y: first.z * second.x - first.x * second.z,
+    z: first.x * second.y - first.y * second.x
+  };
+}
+
+function normalizeVector(vector, fallback = { x: 1, y: 0, z: 0 }) {
+  const length = Math.hypot(vector.x, vector.y, vector.z);
+  if (length < 0.0001) {
+    return fallback;
+  }
+
+  return {
+    x: vector.x / length,
+    y: vector.y / length,
+    z: vector.z / length
+  };
+}
+
+function rotateXVector(vector, degrees) {
+  const radians = degrees * Math.PI / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  return {
+    x: vector.x,
+    y: vector.y * cos - vector.z * sin,
+    z: vector.y * sin + vector.z * cos
+  };
+}
+
+function rotateYVector(vector, degrees) {
+  const radians = degrees * Math.PI / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  return {
+    x: vector.x * cos + vector.z * sin,
+    y: vector.y,
+    z: -vector.x * sin + vector.z * cos
+  };
+}
+
+function getCameraDirectionInModelSpace() {
+  return normalizeVector(
+    rotateYVector(
+      rotateXVector({ x: 0, y: 0, z: 1 }, -viewState.rotationX),
+      -viewState.rotationY
+    ),
+    { x: 0, y: 0, z: 1 }
+  );
+}
+
+function getArrowBillboardMatrix(direction) {
+  const xAxis = normalizeVector(direction);
+  const cameraDirection = getCameraDirectionInModelSpace();
+  let zAxis = {
+    x: cameraDirection.x - xAxis.x * dotProduct(cameraDirection, xAxis),
+    y: cameraDirection.y - xAxis.y * dotProduct(cameraDirection, xAxis),
+    z: cameraDirection.z - xAxis.z * dotProduct(cameraDirection, xAxis)
+  };
+  zAxis = normalizeVector(zAxis, Math.abs(xAxis.z) < 0.9 ? { x: 0, y: 0, z: 1 } : { x: 0, y: 1, z: 0 });
+  const yAxis = normalizeVector(crossProduct(zAxis, xAxis), { x: 0, y: 1, z: 0 });
+
+  return `matrix3d(${[
+    xAxis.x, xAxis.y, xAxis.z, 0,
+    yAxis.x, yAxis.y, yAxis.z, 0,
+    zAxis.x, zAxis.y, zAxis.z, 0,
+    0, 0, 0, 1
+  ].join(", ")})`;
+}
+
+function getTrimmedArrowEndpoints(endpoints) {
+  const vector = {
+    x: endpoints.to.x - endpoints.from.x,
+    y: endpoints.to.y - endpoints.from.y,
+    z: endpoints.to.z - endpoints.from.z
+  };
+  const distance = Math.hypot(vector.x, vector.y, vector.z);
+  if (distance <= 0.01) {
+    return null;
+  }
+
+  const fromRange = getSegmentBoxIntersectionRange(endpoints.from, endpoints.to, getCellBounds(endpoints.fromCell));
+  const toRange = getSegmentBoxIntersectionRange(endpoints.from, endpoints.to, getCellBounds(endpoints.toCell));
+  if (!fromRange || !toRange) {
+    return null;
+  }
+
+  const overlapT = ARROW_ENDPOINT_OVERLAP / distance;
+  let startT = fromRange.exit - overlapT;
+  let endT = toRange.enter + overlapT;
+
+  if (startT >= endT) {
+    const minLengthT = Math.min(1, ARROW_MIN_LENGTH / distance);
+    const centerT = (fromRange.exit + toRange.enter) / 2;
+    startT = centerT - minLengthT / 2;
+    endT = centerT + minLengthT / 2;
+  }
+
+  startT = clamp(startT, 0, 1);
+  endT = clamp(endT, 0, 1);
+  if (startT >= endT) {
+    return null;
+  }
+
+  return {
+    from: getPointOnSegment(endpoints.from, endpoints.to, startT),
+    to: getPointOnSegment(endpoints.from, endpoints.to, endT)
+  };
+}
+
+function getArrowGeometry(arrow) {
+  const endpoints = getArrowEndpoints(arrow);
+  if (!endpoints) {
+    return null;
+  }
+  const trimmedEndpoints = getTrimmedArrowEndpoints(endpoints);
+  if (!trimmedEndpoints) {
+    return null;
+  }
+
+  const midpoint = {
+    x: (trimmedEndpoints.from.x + trimmedEndpoints.to.x) / 2,
+    y: (trimmedEndpoints.from.y + trimmedEndpoints.to.y) / 2,
+    z: (trimmedEndpoints.from.z + trimmedEndpoints.to.z) / 2
+  };
+  const vector = {
+    x: trimmedEndpoints.to.x - trimmedEndpoints.from.x,
+    y: trimmedEndpoints.to.y - trimmedEndpoints.from.y,
+    z: trimmedEndpoints.to.z - trimmedEndpoints.from.z
+  };
+  const rawLength = Math.hypot(vector.x, vector.y, vector.z);
+  const length = Math.max(ARROW_MIN_LENGTH, rawLength);
+  const direction = normalizeVector(vector);
+
+  return {
+    midpoint,
+    length,
+    direction
+  };
+}
+
+function updateArrowElement(element, arrow) {
+  const geometry = getArrowGeometry(arrow);
+  if (!geometry) {
+    element.classList.add("is-hidden");
+    return;
+  }
+
+  const baseTransform = `translate3d(${geometry.midpoint.x}px, ${geometry.midpoint.y}px, ${geometry.midpoint.z}px)`;
+  const track = element.querySelector(".arrow-track");
+  element.style.transform = baseTransform;
+  element.style.setProperty("--arrow-color", arrow.color);
+  element.classList.toggle("is-hidden", arrow.hidden);
+  element.classList.toggle("is-selected", isArrowSelected(arrow));
+  if (track) {
+    track.style.width = `${geometry.length}px`;
+    track.style.left = `${-geometry.length / 2}px`;
+    track.style.transform = getArrowBillboardMatrix(geometry.direction);
+  }
+}
+
+function selectArrowEndpoints(arrow) {
+  const fromCell = getCellByBoardKey(arrow.from);
+  const toCell = getCellByBoardKey(arrow.to);
+  if (!fromCell || !toCell) {
+    return;
+  }
+
+  viewState.selectedId = toCell.id;
+  viewState.selectedIds = new Set([fromCell.id, toCell.id]);
+  updateAllCellStates();
+  updateAllOperatorStates();
+  updateAllArrowStates();
+  updateSelection();
+  updateWindowControlButtons();
+}
+
+function isArrowSelected(arrow) {
+  const selectedCells = getSelectedCellSequence();
+  if (selectedCells.length !== 2) {
+    return false;
+  }
+
+  return getBoardKeyFromCoord(selectedCells[0].coord) === arrow.from
+    && getBoardKeyFromCoord(selectedCells[1].coord) === arrow.to;
+}
+
+function renderArrow(arrow) {
+  const element = document.createElement("article");
+  element.className = "arrow-link";
+  element.dataset.arrowId = arrow.id;
+  element.setAttribute("aria-label", `箭头 ${arrow.from} 到 ${arrow.to}`);
+
+  const track = document.createElement("span");
+  track.className = "arrow-track";
+  const line = document.createElement("span");
+  line.className = "arrow-line";
+  const head = document.createElement("span");
+  head.className = "arrow-head";
+  track.append(line, head);
+  element.appendChild(track);
+
+  element.addEventListener("pointerdown", (event) => {
+    event.stopPropagation();
+  });
+  element.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (editingState) {
+      stopEditing({ commit: true });
+    }
+    selectArrowEndpoints(arrow);
+  });
+
+  updateArrowElement(element, arrow);
+  return element;
+}
+
 function renderCells() {
   syncSliceSizesToDimensions();
   state.operatorSize = normalizeOperatorSize(state.operatorSize);
   buildCells();
   buildOperators();
+  buildArrows();
   cuboid.replaceChildren();
   cuboid.classList.toggle("has-detail-preview", viewState.detailPreview);
   cuboid.classList.toggle("has-markers", viewState.markersVisible);
@@ -2283,6 +2786,9 @@ function renderCells() {
   });
   operators.forEach((operator) => {
     cuboid.appendChild(renderOperator(operator));
+  });
+  arrows.forEach((arrow) => {
+    cuboid.appendChild(renderArrow(arrow));
   });
   renderSliceControls();
   applyViewTransform();
@@ -2474,6 +2980,12 @@ function applyCellSpacing() {
       element.style.transform = operatorTransform(operator);
     }
   });
+  arrows.forEach((arrow) => {
+    const element = cuboid.querySelector(`[data-arrow-id="${arrow.id}"]`);
+    if (element) {
+      updateArrowElement(element, arrow);
+    }
+  });
   renderSliceControls();
   updateSpacingControls();
   applyViewTransform();
@@ -2511,6 +3023,15 @@ function updateAllOperatorStates() {
   operators.forEach((operator) => {
     const element = cuboid.querySelector(`[data-operator-id="${operator.id}"]`);
     updateOperatorClasses(element, operator);
+  });
+}
+
+function updateAllArrowStates() {
+  arrows.forEach((arrow) => {
+    const element = cuboid.querySelector(`[data-arrow-id="${arrow.id}"]`);
+    if (element) {
+      updateArrowElement(element, arrow);
+    }
   });
 }
 
@@ -2560,6 +3081,13 @@ function updateBillboards() {
 
   cuboid.querySelectorAll(".operator-symbol-anchor").forEach((anchor) => {
     anchor.style.transform = `${anchor.dataset.baseTransform} ${labelTransform}`;
+  });
+
+  arrows.forEach((arrow) => {
+    const element = cuboid.querySelector(`[data-arrow-id="${arrow.id}"]`);
+    if (element) {
+      updateArrowElement(element, arrow);
+    }
   });
 
   sliceControls.querySelectorAll(".slice-control").forEach((control) => {
@@ -2850,6 +3378,8 @@ function resetView() {
     cell.opacity = 1;
   });
   updateAllCellStates();
+  updateAllOperatorStates();
+  updateAllArrowStates();
   selectionText.textContent = "尚未选择。";
   updateWindowControlButtons();
   applyViewTransform();
@@ -2906,6 +3436,27 @@ showMiniOperatorButton.addEventListener("click", (event) => {
 hideMiniOperatorButton.addEventListener("click", (event) => {
   event.stopPropagation();
   setSelectedMiniOperatorVisibility(false);
+});
+
+showArrowButton.addEventListener("click", (event) => {
+  event.stopPropagation();
+  setSelectedArrowsVisibility(true);
+});
+
+hideArrowButton.addEventListener("click", (event) => {
+  event.stopPropagation();
+  setSelectedArrowsVisibility(false);
+});
+
+arrowColorInput?.addEventListener("input", () => {
+  const color = normalizeHexColor(arrowColorInput.value);
+  if (color) {
+    viewState.arrowColor = color;
+  }
+});
+
+arrowColorInput?.addEventListener("change", () => {
+  setSelectedArrowsColor(arrowColorInput.value);
 });
 
 addWidthLeftButton?.addEventListener("click", (event) => {
@@ -3153,6 +3704,9 @@ async function initializeApp() {
   rowRuleSelect.value = viewState.rowRule;
   detailPreviewSelect.value = viewState.detailPreview ? "on" : "off";
   markerVisibilitySelect.value = viewState.markersVisible ? "on" : "off";
+  if (arrowColorInput) {
+    arrowColorInput.value = viewState.arrowColor;
+  }
   updateShapeControls();
   renderCells();
   renderConfig();
@@ -3169,6 +3723,9 @@ window.knowledgeBoard = {
   state,
   get cells() {
     return cells;
+  },
+  get arrows() {
+    return arrows;
   },
   viewState,
   ROW_RULES,

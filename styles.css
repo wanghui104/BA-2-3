@@ -175,8 +175,33 @@ button {
 .top-format-toolbar {
   position: fixed;
   left: 16px;
-  top: 178px;
+  top: 246px;
   z-index: 12;
+}
+
+.arrow-color-control {
+  grid-column: 1 / -1;
+  min-height: 28px;
+  display: grid;
+  grid-template-columns: 1fr 34px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #263241;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.arrow-color-control input {
+  width: 30px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  cursor: pointer;
 }
 
 .floating-format-toolbar {
@@ -442,6 +467,70 @@ button {
   height: var(--h);
   transform-style: preserve-3d;
   cursor: pointer;
+}
+
+.arrow-link {
+  --arrow-color: #357ded;
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  z-index: 4;
+  transform-style: preserve-3d;
+}
+
+.arrow-track {
+  position: absolute;
+  left: 0;
+  top: -14px;
+  height: 28px;
+  display: block;
+  cursor: pointer;
+  pointer-events: auto;
+  transform-origin: center center;
+  transform-style: preserve-3d;
+}
+
+.arrow-line {
+  position: absolute;
+  left: 0;
+  right: 13.75px;
+  top: 50%;
+  height: 5px;
+  border: 0;
+  border-radius: 999px 0 0 999px;
+  background: var(--arrow-color);
+  box-shadow: 0 4px 12px rgba(38, 47, 64, 0.12);
+  opacity: 0.46;
+  transform: translateY(-50%);
+  transform-style: preserve-3d;
+}
+
+.arrow-head {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  width: 0;
+  height: 0;
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+  border-left: 14px solid var(--arrow-color);
+  opacity: 0.46;
+  transform: translateY(-50%);
+  filter: drop-shadow(0 3px 7px rgba(38, 47, 64, 0.12));
+}
+
+.arrow-link.is-selected .arrow-line {
+  opacity: 0.56;
+}
+
+.arrow-link.is-selected .arrow-head {
+  opacity: 0.72;
+}
+
+.arrow-link.is-hidden {
+  display: none;
 }
 
 .face {
