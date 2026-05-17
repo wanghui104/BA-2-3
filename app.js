@@ -50,6 +50,59 @@ const ARROW_ENDPOINT_OVERLAP = 5;
 const ARROW_MIN_LENGTH = 28;
 const BULLET_LIST_STYLES = ["disc", "circle", "diamond"];
 const NUMBERED_LIST_STYLES = ["decimal", "lower-alpha", "lower-roman"];
+const EXCEL_TABLE_POSITION = {
+  y: -214,
+  z: -92
+};
+const EXCEL_TABLE_DEFAULT_ROW_HEIGHT = 14;
+const EXCEL_TABLE_HEADER_HEIGHT = 16;
+const EXCEL_TABLE_ROW_HEADER_WIDTH = 24;
+const EXCEL_TABLE_GAP_FROM_CUBOID = 60;
+const EXCEL_COLUMN_WIDTH_MIN = 34;
+const EXCEL_COLUMN_RESIZE_HITBOX = 10;
+const EXCEL_ROW_HEIGHT_MIN = 10;
+
+const defaultExcelTableColumns = [
+  { id: "section", width: 94, minWidth: 54 },
+  { id: "col", width: 54, minWidth: 34 },
+  { id: "name", width: 320, minWidth: 130 },
+  { id: "total", width: 78, minWidth: 50 },
+  { id: "line", width: 78, minWidth: 50 }
+];
+
+const defaultExcelTableRows = [
+  { kind: "title", cells: { section: "", col: "", name: "IEE Part 2", total: "", line: "" } },
+  { kind: "header", cells: { section: "", col: "Col #", name: "Col Name", total: "Total Amt", line: "Line _A Amt" } },
+  { cells: { section: "", col: "1", name: "Premiums Written", total: "26752", line: "4555" } },
+  { cells: { section: "", col: "3", name: "Premiums Earned", total: "26512", line: "4445" } },
+  { cells: { section: "", col: "5", name: "Dividends to Policyholders", total: "46", line: "" } },
+  { cells: { section: "", col: "7", name: "Incurred Loss", total: "16907", line: "" } },
+  { cells: { section: "", col: "9", name: "LAE - DCC Expense Incurred", total: "1671", line: "" } },
+  { cells: { section: "BS Net reserve liabilities", col: "11", name: "LAE - AO Expense Incurred", total: "1585", line: "" } },
+  { cells: { section: "", col: "13", name: "Unpaid Loss", total: "41894", line: "1311" } },
+  { cells: { section: "", col: "15", name: "LAE - DCC Expense Unpaid", total: "7068", line: "55" } },
+  { cells: { section: "", col: "17", name: "LAE - AO Expense Unpaid", total: "2595", line: "89" } },
+  { cells: { section: "", col: "19", name: "UnEarned Premium Reserve", total: "11691", line: "2401" } },
+  { kind: "spacer", cells: { section: "", col: "", name: "", total: "", line: "" } },
+  { cells: { section: "IS line4 Other Underwriting Expenses", col: "21", name: "Agents' Balances", total: "7172", line: "1901" } },
+  { cells: { section: "", col: "23", name: "Commission and Brokerage Expenses Incurred", total: "4055", line: "867" } },
+  { cells: { section: "", col: "25", name: "Taxes, Licenses & Fees Incurred", total: "860", line: "130" } },
+  { cells: { section: "", col: "27", name: "Other Acquisitions, Field Supervision, and Collection Expenses", total: "1283", line: "169" } },
+  { cells: { section: "", col: "29", name: "General Expenses", total: "2285", line: "298" } },
+  { cells: { section: "", col: "31", name: "Other Income Less Other Expenses", total: "33", line: "" } },
+  { kind: "spacer", cells: { section: "", col: "", name: "", total: "", line: "" } },
+  { cells: { section: "", col: "33", name: "Pre-tax Profit or Loss Excluding All Investment Gain", total: "-2147", line: "-1241" } },
+  { cells: { section: "", col: "35", name: "Investment Gain on Funds Attributable to Insurance Transactions", total: "2663", line: "53" } },
+  { cells: { section: "", col: "37", name: "Profit or Loss Excluding Investment Gain Attributable to Capital and Surplus", total: "516", line: "-1188" } },
+  { cells: { section: "", col: "39", name: "Investment Gain Attributable to Capital and Surplus", total: "1741", line: "179" } },
+  { kind: "subtotal", cells: { section: "", col: "", name: "Subtotal Net Investment Gain(Loss) Before Capital Gains tax", total: "4404", line: "232" } },
+  { cells: { section: "", col: "41", name: "Total Profit or Loss", total: "2257", line: "" } },
+  { kind: "spacer", cells: { section: "", col: "", name: "", total: "", line: "" } },
+  { cells: { section: "BS Liab 37", col: "", name: "BS : Surplus line 37 : Policyholder Surplus", total: "31024", line: "tbl 69 : $2872" } },
+  { kind: "green", cells: { section: "BS Liab 12", col: "", name: "BS Liab Line 12 : Ceded reinsurance premium payable", total: "440", line: "tbl 67 : $12" } },
+  { kind: "spacer", cells: { section: "", col: "", name: "", total: "", line: "" } },
+  { kind: "green", cells: { section: "", col: "", name: "U&IE Part 1B Col 4+5 Line. Ceded WP", total: "1882", line: "91" } }
+];
 
 const sampleTexts = [
   "核心论点\n定义问题\n限定范围\n提出判断",
@@ -84,7 +137,11 @@ const state = {
   },
   operators: {},
   arrows: {},
-  boards: {}
+  boards: {},
+  excelTable: {
+    columns: cloneData(defaultExcelTableColumns),
+    rows: cloneData(defaultExcelTableRows)
+  }
 };
 
 let cells = [];
@@ -96,6 +153,7 @@ const faces = ["front", "back", "right", "left", "top", "bottom"];
 const scene = document.querySelector("#scene");
 const modelStage = document.querySelector("#modelStage");
 const cuboid = document.querySelector("#cuboid");
+const excelTableRack = document.querySelector("#excelTableRack");
 const sliceControls = document.querySelector("#sliceControls");
 const resetViewButton = document.querySelector("#resetView");
 const viewReadout = document.querySelector("#viewReadout");
@@ -150,6 +208,7 @@ const viewState = {
   markersVisible: false,
   textSize: 10,
   arrowColor: "#357ded",
+  excelTableSelected: false,
   selectedId: null,
   selectedIds: new Set(),
   dragging: false,
@@ -174,6 +233,9 @@ const saveState = {
 let spacingChangeSnapshot = null;
 let textSizeChangeSnapshot = null;
 let operatorSizeChangeSnapshot = null;
+let excelEditSnapshot = null;
+let excelColumnResizeState = null;
+let excelRowResizeState = null;
 
 function getBoardKey(x, y, z) {
   return `${x}-${y}-${z}`;
@@ -224,6 +286,48 @@ function cloneData(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function normalizeExcelColumns(columns) {
+  const sourceColumns = Array.isArray(columns) && columns.length > 0 ? columns : defaultExcelTableColumns;
+
+  return defaultExcelTableColumns.map((fallback, index) => {
+    const column = sourceColumns.find((item) => item?.id === fallback.id) || sourceColumns[index] || fallback;
+    const width = Number.parseInt(column.width, 10);
+    const minWidth = Number.parseInt(column.minWidth, 10);
+    return {
+      id: fallback.id,
+      width: Number.isFinite(width) ? Math.max(width, fallback.minWidth || EXCEL_COLUMN_WIDTH_MIN) : fallback.width,
+      minWidth: Number.isFinite(minWidth) ? Math.max(minWidth, EXCEL_COLUMN_WIDTH_MIN) : fallback.minWidth
+    };
+  });
+}
+
+function normalizeExcelRows(rows) {
+  const sourceRows = Array.isArray(rows) && rows.length > 0 ? rows : defaultExcelTableRows;
+
+  return sourceRows.map((row, index) => {
+    const fallback = defaultExcelTableRows[index] || {};
+    const sourceCells = row?.cells || row || {};
+    const fallbackCells = fallback.cells || {};
+    const cells = {};
+    defaultExcelTableColumns.forEach((column) => {
+      cells[column.id] = String(sourceCells[column.id] ?? fallbackCells[column.id] ?? "");
+    });
+
+    return {
+      kind: String(row?.kind ?? fallback.kind ?? ""),
+      height: Math.max(EXCEL_ROW_HEIGHT_MIN, Number.parseInt(row?.height ?? EXCEL_TABLE_DEFAULT_ROW_HEIGHT, 10) || EXCEL_TABLE_DEFAULT_ROW_HEIGHT),
+      cells
+    };
+  });
+}
+
+function normalizeExcelTable(table) {
+  return {
+    columns: normalizeExcelColumns(table?.columns),
+    rows: normalizeExcelRows(table?.rows || table)
+  };
+}
+
 function createHistorySnapshot() {
   return {
     dimensions: cloneData(state.dimensions),
@@ -232,6 +336,7 @@ function createHistorySnapshot() {
     operators: cloneData(state.operators),
     arrows: cloneData(state.arrows),
     boards: cloneData(state.boards),
+    excelTable: cloneData(state.excelTable),
     view: {
       gap: viewState.gap,
       rowRule: viewState.rowRule,
@@ -303,6 +408,7 @@ function applyHistorySnapshot(snapshot) {
   state.operators = cloneData(snapshot.operators || {});
   state.arrows = cloneData(snapshot.arrows || {});
   state.boards = cloneData(snapshot.boards);
+  state.excelTable = normalizeExcelTable(snapshot.excelTable || snapshot.excelRows);
   gridSpec.width = state.dimensions.width;
   gridSpec.height = state.dimensions.height;
   gridSpec.depth = state.dimensions.depth;
@@ -334,6 +440,7 @@ function undoHistoryStep() {
   if (editingState) {
     stopEditing({ commit: true });
   }
+  stopExcelEditing();
 
   if (historyState.undoStack.length === 0) {
     return;
@@ -350,6 +457,7 @@ function redoHistoryStep() {
   if (editingState) {
     stopEditing({ commit: true });
   }
+  stopExcelEditing();
 
   if (historyState.redoStack.length === 0) {
     return;
@@ -382,7 +490,8 @@ function createPersistedState() {
       textSize: viewState.textSize,
       arrowColor: viewState.arrowColor
     },
-    boards: cloneData(state.boards)
+    boards: cloneData(state.boards),
+    excelTable: cloneData(state.excelTable)
   };
 }
 
@@ -398,6 +507,7 @@ function applyPersistedState(payload) {
   state.operators = cloneData(payload.operators || {});
   state.arrows = cloneData(payload.arrows || {});
   state.boards = cloneData(payload.boards || {});
+  state.excelTable = normalizeExcelTable(payload.excelTable || payload.excelRows);
 
   if (payload.boardTexts && !payload.boards) {
     Object.entries(payload.boardTexts).forEach(([key, text]) => {
@@ -448,6 +558,7 @@ async function saveBoardState() {
   if (editingState) {
     stopEditing({ commit: true });
   }
+  stopExcelEditing();
 
   saveState.isSaving = true;
   updateSaveStatus();
@@ -1576,6 +1687,7 @@ function updateEditorMarkers(editor) {
 }
 
 function selectCell(cell) {
+  setExcelTableSelected(false);
   viewState.selectedId = cell.id;
   viewState.selectedIds = new Set([cell.id]);
   updateAllCellStates();
@@ -1586,6 +1698,7 @@ function selectCell(cell) {
 }
 
 function selectOperator(operator) {
+  setExcelTableSelected(false);
   viewState.selectedId = operator.id;
   viewState.selectedIds = new Set([operator.id]);
   updateAllCellStates();
@@ -1596,6 +1709,7 @@ function selectOperator(operator) {
 }
 
 function toggleSelectableSelection(item) {
+  setExcelTableSelected(false);
   const selectedIds = new Set(viewState.selectedIds);
 
   if (selectedIds.has(item.id)) {
@@ -1637,12 +1751,34 @@ function selectOperatorFromEvent(operator, event) {
 }
 
 function clearSelection() {
+  setExcelTableSelected(false);
   viewState.selectedId = null;
   viewState.selectedIds.clear();
   updateAllCellStates();
   updateAllOperatorStates();
   updateAllArrowStates();
   selectionText.textContent = "尚未选择。";
+  updateWindowControlButtons();
+}
+
+function setExcelTableSelected(isSelected) {
+  viewState.excelTableSelected = isSelected;
+  modelStage.classList.toggle("is-excel-table-selected", isSelected);
+  excelTableRack?.classList.toggle("is-selected", isSelected);
+}
+
+function selectExcelTable() {
+  if (editingState) {
+    stopEditing({ commit: true });
+  }
+
+  viewState.selectedId = null;
+  viewState.selectedIds.clear();
+  updateAllCellStates();
+  updateAllOperatorStates();
+  updateAllArrowStates();
+  setExcelTableSelected(true);
+  selectionText.textContent = "已选择百叶窗 table。";
   updateWindowControlButtons();
 }
 
@@ -2770,6 +2906,428 @@ function renderArrow(arrow) {
   return element;
 }
 
+function renderExcelTableRows() {
+  if (!excelTableRack) {
+    return;
+  }
+
+  excelTableRack.replaceChildren();
+  state.excelTable = normalizeExcelTable(state.excelTable);
+  const columns = state.excelTable.columns;
+  const contentWidth = columns.reduce((sum, column) => sum + column.width, 0);
+  const tableWidth = EXCEL_TABLE_ROW_HEADER_WIDTH + contentWidth;
+  const tableHeight = EXCEL_TABLE_HEADER_HEIGHT + state.excelTable.rows.reduce((sum, row) => sum + row.height, 0);
+  const totalCuboidWidth = sumList(state.sliceSizes.widths) + (state.dimensions.width - 1) * getGap();
+  const tableX = -totalCuboidWidth / 2 - EXCEL_TABLE_GAP_FROM_CUBOID - tableWidth;
+  const gridTemplateColumns = `${EXCEL_TABLE_ROW_HEADER_WIDTH}px ${columns.map((column) => `${column.width}px`).join(" ")}`;
+  excelTableRack.style.setProperty("--excel-table-width", `${tableWidth}px`);
+  excelTableRack.style.setProperty("--excel-table-height", `${tableHeight}px`);
+  excelTableRack.style.transform = `translate3d(${tableX}px, ${EXCEL_TABLE_POSITION.y}px, ${EXCEL_TABLE_POSITION.z}px)`;
+  excelTableRack.appendChild(renderExcelColumnHeaderRow({ columns, gridTemplateColumns }));
+
+  let rowY = EXCEL_TABLE_HEADER_HEIGHT;
+  state.excelTable.rows.forEach((row, index) => {
+    const element = document.createElement("div");
+    element.className = `excel-table-row${row.kind ? ` is-${row.kind}` : ""}`;
+    element.dataset.baseTransform = `translate3d(0px, ${rowY}px, 0px)`;
+    element.style.gridTemplateColumns = gridTemplateColumns;
+    element.style.height = `${row.height}px`;
+    element.style.lineHeight = `${row.height - 1}px`;
+    element.style.transform = element.dataset.baseTransform;
+    element.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+      selectExcelTable();
+      handleExcelRowResizeHit(event);
+    });
+
+    const rowHeader = document.createElement("span");
+    rowHeader.className = "excel-row-title";
+    rowHeader.textContent = String(index + 1);
+    const rowResizeHandle = document.createElement("span");
+    rowResizeHandle.className = "excel-row-resize-handle";
+    rowResizeHandle.dataset.rowIndex = String(index);
+    rowResizeHandle.addEventListener("pointerdown", handleExcelRowResizeStart);
+    rowHeader.appendChild(rowResizeHandle);
+    element.appendChild(rowHeader);
+
+    columns.forEach((column) => {
+      const cell = document.createElement("span");
+      const value = row.cells[column.id];
+      cell.className = `excel-cell excel-cell-${column.id}`;
+      cell.textContent = value;
+      cell.title = value;
+      cell.contentEditable = "true";
+      cell.spellcheck = false;
+      cell.dataset.rowIndex = String(index);
+      cell.dataset.columnId = column.id;
+      cell.addEventListener("focus", handleExcelCellFocus);
+      cell.addEventListener("input", handleExcelCellInput);
+      cell.addEventListener("blur", handleExcelCellBlur);
+      cell.addEventListener("keydown", handleExcelCellKeydown);
+      cell.addEventListener("paste", handleExcelCellPaste);
+
+      element.appendChild(cell);
+    });
+
+    let columnEdge = 0;
+    columns.forEach((column) => {
+      columnEdge += column.width;
+      const handle = document.createElement("span");
+      handle.className = "excel-column-resize-handle";
+      handle.dataset.columnId = column.id;
+      handle.style.left = `${EXCEL_TABLE_ROW_HEADER_WIDTH + columnEdge}px`;
+      handle.addEventListener("pointerdown", handleExcelColumnResizeStart);
+      element.appendChild(handle);
+    });
+
+    excelTableRack.appendChild(element);
+    rowY += row.height;
+  });
+}
+
+function renderExcelColumnHeaderRow({ columns, gridTemplateColumns }) {
+  const element = document.createElement("div");
+  element.className = "excel-table-row excel-column-title-row";
+  element.dataset.baseTransform = "translate3d(0px, 0px, 0px)";
+  element.style.gridTemplateColumns = gridTemplateColumns;
+  element.style.height = `${EXCEL_TABLE_HEADER_HEIGHT}px`;
+  element.style.lineHeight = `${EXCEL_TABLE_HEADER_HEIGHT - 1}px`;
+  element.style.transform = element.dataset.baseTransform;
+  element.addEventListener("pointerdown", (event) => {
+    event.stopPropagation();
+    selectExcelTable();
+  });
+
+  const corner = document.createElement("span");
+  corner.className = "excel-corner-title";
+  element.appendChild(corner);
+
+  columns.forEach((column, index) => {
+    const title = document.createElement("span");
+    title.className = "excel-column-title";
+    title.textContent = String.fromCharCode(65 + index);
+    element.appendChild(title);
+  });
+
+  let columnEdge = 0;
+  columns.forEach((column) => {
+    columnEdge += column.width;
+    const handle = document.createElement("span");
+    handle.className = "excel-column-title-resize-handle";
+    handle.dataset.columnId = column.id;
+    handle.style.left = `${EXCEL_TABLE_ROW_HEADER_WIDTH + columnEdge}px`;
+    handle.addEventListener("pointerdown", handleExcelColumnResizeStart);
+    element.appendChild(handle);
+  });
+
+  return element;
+}
+
+function handleExcelCellFocus() {
+  if (!excelEditSnapshot) {
+    excelEditSnapshot = createHistorySnapshot();
+  }
+}
+
+function handleExcelCellInput(event) {
+  const rowIndex = Number.parseInt(event.currentTarget.dataset.rowIndex, 10);
+  const columnId = event.currentTarget.dataset.columnId;
+  if (!Number.isInteger(rowIndex) || !columnId || !state.excelTable.rows[rowIndex]) {
+    return;
+  }
+
+  state.excelTable.rows[rowIndex].cells[columnId] = event.currentTarget.textContent;
+  markDirty();
+}
+
+function handleExcelCellBlur() {
+  if (!excelEditSnapshot) {
+    return;
+  }
+
+  const beforeSnapshot = excelEditSnapshot;
+  excelEditSnapshot = null;
+  commitHistorySnapshot(beforeSnapshot);
+}
+
+function handleExcelCellKeydown(event) {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    event.currentTarget.blur();
+  }
+}
+
+function handleExcelCellPaste(event) {
+  event.preventDefault();
+  const text = event.clipboardData.getData("text/plain").replace(/[\r\n\t]+/g, " ");
+  document.execCommand("insertText", false, text);
+}
+
+function stopExcelEditing() {
+  if (document.activeElement?.classList?.contains("excel-cell")) {
+    document.activeElement.blur();
+  }
+}
+
+function getExcelTablePointerHit(event) {
+  if (!excelTableRack) {
+    return null;
+  }
+
+  const rows = [...excelTableRack.querySelectorAll(".excel-table-row")];
+  const tableWidth = EXCEL_TABLE_ROW_HEADER_WIDTH
+    + state.excelTable.columns.reduce((sum, column) => sum + column.width, 0);
+
+  for (const rowElement of rows) {
+    const rect = rowElement.getBoundingClientRect();
+    if (
+      rect.width <= 0
+      || rect.height <= 0
+      || event.clientX < rect.left
+      || event.clientX > rect.right
+      || event.clientY < rect.top
+      || event.clientY > rect.bottom
+    ) {
+      continue;
+    }
+
+    const localX = ((event.clientX - rect.left) / rect.width) * tableWidth;
+    const rowIndex = rowElement.classList.contains("excel-column-title-row")
+      ? -1
+      : Number.parseInt(rowElement.querySelector(".excel-cell")?.dataset.rowIndex, 10);
+    let columnEdge = EXCEL_TABLE_ROW_HEADER_WIDTH;
+    let columnId = null;
+    let resizeColumnId = null;
+    let nearestResizeDistance = Infinity;
+
+    state.excelTable.columns.forEach((column) => {
+      const start = columnEdge;
+      const end = columnEdge + column.width;
+      const distance = Math.abs(localX - end);
+      if (localX >= start && localX <= end) {
+        columnId = column.id;
+      }
+      if (distance <= EXCEL_COLUMN_RESIZE_HITBOX && distance < nearestResizeDistance) {
+        resizeColumnId = column.id;
+        nearestResizeDistance = distance;
+      }
+      columnEdge = end;
+    });
+
+    return {
+      rowElement,
+      rowIndex,
+      columnId,
+      resizeColumnId,
+      inRowHeader: localX < EXCEL_TABLE_ROW_HEADER_WIDTH
+    };
+  }
+
+  return null;
+}
+
+function focusExcelCell(rowIndex, columnId) {
+  if (!Number.isInteger(rowIndex) || rowIndex < 0 || !columnId) {
+    return;
+  }
+
+  const cell = excelTableRack?.querySelector(`.excel-cell[data-row-index="${rowIndex}"][data-column-id="${columnId}"]`);
+  if (!cell) {
+    return;
+  }
+
+  cell.focus();
+  const range = document.createRange();
+  range.selectNodeContents(cell);
+  range.collapse(false);
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function handleExcelTablePointerCapture(event) {
+  if (event.button !== 0 || excelTableRack?.contains(event.target)) {
+    return;
+  }
+
+  const hit = getExcelTablePointerHit(event);
+  if (!hit) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  selectExcelTable();
+
+  if (hit.resizeColumnId) {
+    startExcelColumnResize(event, hit.resizeColumnId, excelTableRack);
+    return;
+  }
+
+  if (!hit.inRowHeader && hit.columnId) {
+    focusExcelCell(hit.rowIndex, hit.columnId);
+  }
+}
+
+function handleExcelTableClickCapture(event) {
+  if (excelTableRack?.contains(event.target)) {
+    return;
+  }
+
+  const hit = getExcelTablePointerHit(event);
+  if (!hit) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopImmediatePropagation();
+}
+
+function getExcelColumnResizeHit(event, rowElement) {
+  const rect = rowElement.getBoundingClientRect();
+  const tableWidth = EXCEL_TABLE_ROW_HEADER_WIDTH
+    + state.excelTable.columns.reduce((sum, column) => sum + column.width, 0);
+  if (rect.width <= 0 || tableWidth <= 0) {
+    return null;
+  }
+
+  const localX = ((event.clientX - rect.left) / rect.width) * tableWidth;
+  let columnEdge = EXCEL_TABLE_ROW_HEADER_WIDTH;
+  let nearestHit = null;
+
+  state.excelTable.columns.forEach((column) => {
+    columnEdge += column.width;
+    const distance = Math.abs(localX - columnEdge);
+    if (distance <= EXCEL_COLUMN_RESIZE_HITBOX && (!nearestHit || distance < nearestHit.distance)) {
+      nearestHit = {
+        columnId: column.id,
+        distance
+      };
+    }
+  });
+
+  return nearestHit;
+}
+
+function handleExcelRowResizeHit(event) {
+  if (event.button !== 0 || event.target.classList.contains("excel-column-resize-handle")) {
+    return;
+  }
+
+  const rowElement = event.currentTarget;
+  const hit = getExcelColumnResizeHit(event, rowElement);
+  if (!hit) {
+    return;
+  }
+
+  startExcelColumnResize(event, hit.columnId, rowElement);
+}
+
+function handleExcelColumnResizeStart(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  startExcelColumnResize(event, event.currentTarget.dataset.columnId, event.currentTarget);
+}
+
+function startExcelColumnResize(event, columnId, captureElement) {
+  selectExcelTable();
+  stopExcelEditing();
+  const column = state.excelTable.columns.find((item) => item.id === columnId);
+  if (!column) {
+    return;
+  }
+
+  event.preventDefault();
+  excelColumnResizeState = {
+    pointerId: event.pointerId,
+    columnId,
+    startX: event.clientX,
+    startWidth: column.width,
+    beforeSnapshot: createHistorySnapshot()
+  };
+  captureElement.setPointerCapture(event.pointerId);
+  document.body.classList.add("is-resizing-excel-column");
+}
+
+function handleExcelColumnResizeMove(event) {
+  if (!excelColumnResizeState || event.pointerId !== excelColumnResizeState.pointerId) {
+    return;
+  }
+
+  const column = state.excelTable.columns.find((item) => item.id === excelColumnResizeState.columnId);
+  if (!column) {
+    return;
+  }
+
+  const delta = event.clientX - excelColumnResizeState.startX;
+  column.width = Math.max(column.minWidth || EXCEL_COLUMN_WIDTH_MIN, Math.round(excelColumnResizeState.startWidth + delta / viewState.zoom));
+  renderExcelTableRows();
+  updateBillboards();
+  markDirty();
+}
+
+function handleExcelColumnResizeEnd(event) {
+  if (!excelColumnResizeState || event.pointerId !== excelColumnResizeState.pointerId) {
+    return;
+  }
+
+  const beforeSnapshot = excelColumnResizeState.beforeSnapshot;
+  excelColumnResizeState = null;
+  document.body.classList.remove("is-resizing-excel-column");
+  commitHistorySnapshot(beforeSnapshot);
+}
+
+function handleExcelRowResizeStart(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  selectExcelTable();
+  stopExcelEditing();
+
+  const rowIndex = Number.parseInt(event.currentTarget.dataset.rowIndex, 10);
+  const row = state.excelTable.rows[rowIndex];
+  if (!row) {
+    return;
+  }
+
+  excelRowResizeState = {
+    pointerId: event.pointerId,
+    rowIndex,
+    startY: event.clientY,
+    startHeight: row.height,
+    beforeSnapshot: createHistorySnapshot()
+  };
+  event.currentTarget.setPointerCapture(event.pointerId);
+  document.body.classList.add("is-resizing-excel-row");
+}
+
+function handleExcelRowResizeMove(event) {
+  if (!excelRowResizeState || event.pointerId !== excelRowResizeState.pointerId) {
+    return;
+  }
+
+  const row = state.excelTable.rows[excelRowResizeState.rowIndex];
+  if (!row) {
+    return;
+  }
+
+  const delta = event.clientY - excelRowResizeState.startY;
+  row.height = Math.max(EXCEL_ROW_HEIGHT_MIN, Math.round(excelRowResizeState.startHeight + delta / viewState.zoom));
+  renderExcelTableRows();
+  updateBillboards();
+  markDirty();
+}
+
+function handleExcelRowResizeEnd(event) {
+  if (!excelRowResizeState || event.pointerId !== excelRowResizeState.pointerId) {
+    return;
+  }
+
+  const beforeSnapshot = excelRowResizeState.beforeSnapshot;
+  excelRowResizeState = null;
+  document.body.classList.remove("is-resizing-excel-row");
+  commitHistorySnapshot(beforeSnapshot);
+}
+
 function renderCells() {
   syncSliceSizesToDimensions();
   state.operatorSize = normalizeOperatorSize(state.operatorSize);
@@ -2790,6 +3348,7 @@ function renderCells() {
   arrows.forEach((arrow) => {
     cuboid.appendChild(renderArrow(arrow));
   });
+  renderExcelTableRows();
   renderSliceControls();
   applyViewTransform();
   updateWindowControlButtons();
@@ -2986,6 +3545,7 @@ function applyCellSpacing() {
       updateArrowElement(element, arrow);
     }
   });
+  renderExcelTableRows();
   renderSliceControls();
   updateSpacingControls();
   applyViewTransform();
@@ -3078,6 +3638,14 @@ function updateBillboards() {
   cuboid.querySelectorAll(".cell-billboard-label").forEach((label) => {
     label.style.transform = `${label.dataset.baseTransform} ${labelTransform}`;
   });
+
+  if (excelTableRack) {
+    const isExcelBackside = Math.cos((viewState.rotationY * Math.PI) / 180) < 0;
+    const excelRowTransform = `rotateY(${isExcelBackside ? 180 : 0}deg) rotateX(${-viewState.rotationX}deg)`;
+    excelTableRack.querySelectorAll(".excel-table-row").forEach((row) => {
+      row.style.transform = `${row.dataset.baseTransform} ${excelRowTransform}`;
+    });
+  }
 
   cuboid.querySelectorAll(".operator-symbol-anchor").forEach((anchor) => {
     anchor.style.transform = `${anchor.dataset.baseTransform} ${labelTransform}`;
@@ -3388,11 +3956,19 @@ function resetView() {
 wireFormatToolbar(topFormatToolbar);
 updateFormatToolbarState();
 
+scene.addEventListener("pointerdown", handleExcelTablePointerCapture, true);
 scene.addEventListener("pointerdown", handlePointerDown);
 scene.addEventListener("pointermove", handlePointerMove);
 scene.addEventListener("pointerup", handlePointerUp);
 scene.addEventListener("pointercancel", handlePointerUp);
+scene.addEventListener("click", handleExcelTableClickCapture, true);
 scene.addEventListener("wheel", handleWheel, { passive: false });
+window.addEventListener("pointermove", handleExcelColumnResizeMove);
+window.addEventListener("pointerup", handleExcelColumnResizeEnd);
+window.addEventListener("pointercancel", handleExcelColumnResizeEnd);
+window.addEventListener("pointermove", handleExcelRowResizeMove);
+window.addEventListener("pointerup", handleExcelRowResizeEnd);
+window.addEventListener("pointercancel", handleExcelRowResizeEnd);
 window.addEventListener("resize", updateEditingOverlayBounds);
 window.addEventListener("beforeunload", (event) => {
   const hasUncommittedEdit = editingState
@@ -3663,6 +4239,17 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  if (viewState.excelTableSelected) {
+    if (excelTableRack?.contains(event.target)) {
+      return;
+    }
+
+    stopExcelEditing();
+    setExcelTableSelected(false);
+    selectionText.textContent = "尚未选择。";
+    return;
+  }
+
   clearSelection();
 });
 
@@ -3690,6 +4277,14 @@ document.addEventListener("keydown", (event) => {
   }
 
   if (event.key !== "Escape" || editingState) {
+    return;
+  }
+
+  if (viewState.excelTableSelected) {
+    event.preventDefault();
+    stopExcelEditing();
+    setExcelTableSelected(false);
+    selectionText.textContent = "尚未选择。";
     return;
   }
 

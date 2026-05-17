@@ -444,6 +444,209 @@ button {
   transform-style: preserve-3d;
 }
 
+.excel-table-rack {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--excel-table-width, 624px);
+  height: var(--excel-table-height, 450px);
+  z-index: 30;
+  transform-style: preserve-3d;
+  pointer-events: auto;
+  transform-origin: 0 0;
+}
+
+.excel-table-rack.is-selected {
+  z-index: 40;
+}
+
+.model-stage.is-excel-table-selected .cuboid,
+.model-stage.is-excel-table-selected .slice-controls,
+.model-stage.is-excel-table-selected .axis-rig {
+  pointer-events: none;
+}
+
+.excel-table-row {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--excel-table-width, 624px);
+  height: 14px;
+  display: grid;
+  border-top: 1px solid rgba(28, 36, 48, 0.14);
+  border-left: 1px solid rgba(28, 36, 48, 0.14);
+  background: rgba(255, 255, 255, 0.9);
+  color: #152033;
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-size: 10px;
+  line-height: 13px;
+  cursor: text;
+  transform-origin: center center;
+  transform-style: preserve-3d;
+  box-shadow: 0 1px 2px rgba(38, 47, 64, 0.04);
+}
+
+.excel-table-rack.is-selected .excel-table-row {
+  box-shadow:
+    0 1px 2px rgba(38, 47, 64, 0.04),
+    0 0 0 1px rgba(42, 157, 143, 0.24);
+}
+
+.excel-table-row:last-child {
+  border-bottom: 1px solid rgba(28, 36, 48, 0.14);
+}
+
+.excel-table-row.is-spacer {
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.excel-table-row.is-title,
+.excel-table-row.is-header,
+.excel-table-row.is-subtotal {
+  font-weight: 700;
+}
+
+.excel-table-row.is-green .excel-cell-total,
+.excel-table-row.is-green .excel-cell-line {
+  color: #00a05a;
+}
+
+.excel-column-title-row,
+.excel-row-title,
+.excel-corner-title,
+.excel-column-title {
+  background: #f0f1f3;
+  color: #111827;
+  font-weight: 500;
+}
+
+.excel-column-title-row {
+  z-index: 4;
+}
+
+.excel-corner-title,
+.excel-column-title,
+.excel-row-title {
+  position: relative;
+  height: 100%;
+  padding: 0 4px;
+  overflow: hidden;
+  border-right: 1px solid rgba(28, 36, 48, 0.22);
+  border-bottom: 1px solid rgba(28, 36, 48, 0.22);
+  text-align: center;
+  white-space: nowrap;
+  outline: 0;
+}
+
+.excel-row-title {
+  cursor: default;
+}
+
+.excel-corner-title::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  border-left: 6px solid transparent;
+  border-bottom: 6px solid rgba(28, 36, 48, 0.38);
+}
+
+.excel-cell {
+  position: relative;
+  min-width: 0;
+  height: 100%;
+  padding: 0 4px;
+  overflow: hidden;
+  border-right: 1px solid rgba(28, 36, 48, 0.16);
+  white-space: nowrap;
+  text-overflow: clip;
+  outline: 0;
+}
+
+.excel-cell:focus {
+  position: relative;
+  z-index: 2;
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px #2a9d8f;
+}
+
+.excel-column-resize-handle {
+  position: absolute;
+  top: 0;
+  z-index: 3;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+
+.excel-column-title-resize-handle {
+  position: absolute;
+  top: 0;
+  z-index: 6;
+  width: 10px;
+  height: 100%;
+  cursor: col-resize;
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+
+.excel-column-resize-handle:hover,
+.excel-column-resize-handle:focus-visible,
+.excel-column-title-resize-handle:hover,
+.excel-column-title-resize-handle:focus-visible {
+  background: rgba(42, 157, 143, 0.34);
+}
+
+.excel-row-resize-handle {
+  position: absolute;
+  left: 0;
+  bottom: -4px;
+  z-index: 6;
+  width: 100%;
+  height: 8px;
+  cursor: row-resize;
+  pointer-events: auto;
+}
+
+.excel-row-resize-handle:hover,
+.excel-row-resize-handle:focus-visible {
+  background: rgba(42, 157, 143, 0.34);
+}
+
+body.is-resizing-excel-column,
+body.is-resizing-excel-column * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+body.is-resizing-excel-row,
+body.is-resizing-excel-row * {
+  cursor: row-resize !important;
+  user-select: none;
+}
+
+.excel-cell-section {
+  display: grid;
+  place-items: center;
+  text-align: center;
+  white-space: normal;
+  line-height: 11px;
+}
+
+.excel-cell-col,
+.excel-cell-total,
+.excel-cell-line {
+  text-align: right;
+}
+
+.excel-table-row.is-title .excel-cell-name,
+.excel-table-row.is-header .excel-cell-total,
+.excel-table-row.is-header .excel-cell-line {
+  text-align: center;
+}
+
 .cell {
   --w: 116px;
   --h: 92px;
