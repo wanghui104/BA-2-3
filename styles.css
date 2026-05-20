@@ -175,18 +175,18 @@ button {
 .top-format-toolbar {
   position: fixed;
   left: 16px;
-  top: 246px;
+  top: 290px;
   z-index: 12;
 }
 
 .arrow-color-control {
   grid-column: 1 / -1;
-  min-height: 28px;
+  width: 266px;
   display: grid;
-  grid-template-columns: 1fr 34px;
+  grid-template-columns: 54px 1fr;
   align-items: center;
-  gap: 8px;
-  padding: 0 8px;
+  gap: 6px 8px;
+  padding: 7px 8px;
   border-radius: 6px;
   background: #ffffff;
   color: #263241;
@@ -194,14 +194,48 @@ button {
   font-weight: 850;
 }
 
-.arrow-color-control input {
-  width: 30px;
-  height: 22px;
+.arrow-color-control > span {
+  white-space: nowrap;
+}
+
+.arrow-color-swatches,
+.arrow-opacity-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.board-window-toolbar .arrow-color-swatch {
+  width: 14px;
+  min-width: 14px;
+  height: 18px;
   padding: 0;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
+  border: 1px solid rgba(28, 36, 48, 0.18);
+  border-radius: 3px;
+  background: var(--swatch-color);
   cursor: pointer;
+}
+
+.board-window-toolbar .arrow-color-swatch:hover,
+.board-window-toolbar .arrow-color-swatch:focus-visible,
+.board-window-toolbar .arrow-color-swatch.is-selected {
+  background: var(--swatch-color);
+  outline: 2px solid #1c2430;
+  outline-offset: 1px;
+}
+
+.board-window-toolbar .arrow-opacity-options button {
+  height: 22px;
+  min-width: 39px;
+  padding: 0 5px;
+  border: 1px solid rgba(28, 36, 48, 0.14);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.board-window-toolbar .arrow-opacity-options button.is-selected {
+  background: #1c2430;
+  color: #ffffff;
 }
 
 .floating-format-toolbar {
@@ -673,7 +707,8 @@ body.is-resizing-excel-row * {
 }
 
 .arrow-link {
-  --arrow-color: #357ded;
+  --arrow-color: #0070c0;
+  --arrow-opacity: 1;
   position: absolute;
   left: 0;
   top: 0;
@@ -705,7 +740,7 @@ body.is-resizing-excel-row * {
   border-radius: 999px 0 0 999px;
   background: var(--arrow-color);
   box-shadow: 0 4px 12px rgba(38, 47, 64, 0.12);
-  opacity: 0.46;
+  opacity: var(--arrow-opacity);
   transform: translateY(-50%);
   transform-style: preserve-3d;
 }
@@ -719,17 +754,17 @@ body.is-resizing-excel-row * {
   border-top: 8px solid transparent;
   border-bottom: 8px solid transparent;
   border-left: 14px solid var(--arrow-color);
-  opacity: 0.46;
+  opacity: var(--arrow-opacity);
   transform: translateY(-50%);
   filter: drop-shadow(0 3px 7px rgba(38, 47, 64, 0.12));
 }
 
 .arrow-link.is-selected .arrow-line {
-  opacity: 0.56;
+  box-shadow: 0 4px 12px rgba(38, 47, 64, 0.22);
 }
 
 .arrow-link.is-selected .arrow-head {
-  opacity: 0.72;
+  filter: drop-shadow(0 3px 7px rgba(38, 47, 64, 0.24));
 }
 
 .arrow-link.is-hidden {

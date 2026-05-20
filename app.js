@@ -195,7 +195,8 @@ const showMiniOperatorButton = document.querySelector("#showMiniOperatorButton")
 const hideMiniOperatorButton = document.querySelector("#hideMiniOperatorButton");
 const showArrowButton = document.querySelector("#showArrowButton");
 const hideArrowButton = document.querySelector("#hideArrowButton");
-const arrowColorInput = document.querySelector("#arrowColorInput");
+const arrowColorSwatches = document.querySelectorAll("[data-arrow-color]");
+const arrowOpacityButtons = document.querySelectorAll("[data-arrow-opacity]");
 const topFormatToolbar = document.querySelector("#topFormatToolbar");
 
 const viewState = {
@@ -207,7 +208,8 @@ const viewState = {
   detailPreview: false,
   markersVisible: false,
   textSize: 10,
-  arrowColor: "#357ded",
+  arrowColor: "#0070c0",
+  arrowOpacity: 1,
   excelTableSelected: false,
   selectedId: null,
   selectedIds: new Set(),
@@ -343,7 +345,8 @@ function createHistorySnapshot() {
       detailPreview: viewState.detailPreview,
       markersVisible: viewState.markersVisible,
       textSize: viewState.textSize,
-      arrowColor: viewState.arrowColor
+      arrowColor: viewState.arrowColor,
+      arrowOpacity: viewState.arrowOpacity
     }
   };
 }
@@ -418,15 +421,14 @@ function applyHistorySnapshot(snapshot) {
   viewState.markersVisible = snapshot.view.markersVisible;
   viewState.textSize = snapshot.view.textSize;
   viewState.arrowColor = normalizeHexColor(snapshot.view.arrowColor) || viewState.arrowColor;
+  viewState.arrowOpacity = normalizeArrowOpacity(snapshot.view.arrowOpacity) ?? viewState.arrowOpacity;
   viewState.selectedId = null;
   viewState.selectedIds.clear();
 
   rowRuleSelect.value = viewState.rowRule;
   detailPreviewSelect.value = viewState.detailPreview ? "on" : "off";
   markerVisibilitySelect.value = viewState.markersVisible ? "on" : "off";
-  if (arrowColorInput) {
-    arrowColorInput.value = viewState.arrowColor;
-  }
+  updateArrowStyleControls();
   updateShapeControls();
   renderCells();
   renderConfig();
@@ -488,7 +490,8 @@ function createPersistedState() {
       detailPreview: viewState.detailPreview,
       markersVisible: viewState.markersVisible,
       textSize: viewState.textSize,
-      arrowColor: viewState.arrowColor
+      arrowColor: viewState.arrowColor,
+      arrowOpacity: viewState.arrowOpacity
     },
     boards: cloneData(state.boards),
     excelTable: cloneData(state.excelTable)
@@ -527,6 +530,7 @@ function applyPersistedState(payload) {
     viewState.markersVisible = Boolean(payload.view.markersVisible);
     viewState.textSize = typeof payload.view.textSize === "number" ? payload.view.textSize : viewState.textSize;
     viewState.arrowColor = normalizeHexColor(payload.view.arrowColor) || viewState.arrowColor;
+    viewState.arrowOpacity = normalizeArrowOpacity(payload.view.arrowOpacity) ?? viewState.arrowOpacity;
   }
 
   ensureBoards();
@@ -786,6 +790,15 @@ function normalizeHexColor(value) {
   return /^#[0-9a-f]{6}$/i.test(color) ? color.toLowerCase() : null;
 }
 
+function normalizeArrowOpacity(value) {
+  const opacity = Number(value);
+  if (!Number.isFinite(opacity)) {
+    return null;
+  }
+
+  return clamp(opacity, 0.2, 1);
+}
+
 function rgbToHex(value) {
   const match = String(value || "").match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
   if (!match) {
@@ -1009,11 +1022,13 @@ function normalizeArrow(arrow) {
   }
 
   const color = normalizeHexColor(arrow?.color) || viewState.arrowColor;
+  const opacity = normalizeArrowOpacity(arrow?.opacity) ?? viewState.arrowOpacity;
   return {
     id: getArrowKey(from, to),
     from,
     to,
     color,
+    opacity,
     hidden: Boolean(arrow?.hidden)
   };
 }
@@ -1999,7 +2014,8 @@ function setSelectedArrowsVisibility(visible) {
         id: key,
         from: pair.from,
         to: pair.to,
-        color: normalizeHexColor(viewState.arrowColor) || "#357ded",
+        color: normalizeHexColor(viewState.arrowColor) || "#0070c0",
+        opacity: normalizeArrowOpacity(viewState.arrowOpacity) ?? 1,
         hidden: false
       };
       return;
@@ -2029,6 +2045,7 @@ function setSelectedArrowsColor(color) {
   }
 
   viewState.arrowColor = nextColor;
+  updateArrowStyleControls();
   const pairs = getSelectedArrowPairs();
   const beforeSnapshot = createHistorySnapshot();
   pairs.forEach((pair) => {
@@ -2043,6 +2060,58 @@ function setSelectedArrowsColor(color) {
   });
   renderCells();
   commitHistorySnapshot(beforeSnapshot);
+}
+
+function setSelectedArrowsOpacity(opacity) {
+  const nextOpacity = normalizeArrowOpacity(opacity);
+  if (nextOpacity === null) {
+    return;
+  }
+
+  viewState.arrowOpacity = nextOpacity;
+  updateArrowStyleControls();
+  const pairs = getSelectedArrowPairs();
+  const beforeSnapshot = createHistorySnapshot();
+  pairs.forEach((pair) => {
+    const key = getArrowKey(pair.from, pair.to);
+    const arrow = normalizeArrow(state.arrows[key]);
+    if (arrow && !arrow.hidden) {
+      state.arrows[key] = {
+        ...arrow,
+        opacity: nextOpacity
+      };
+    }
+  });
+  renderCells();
+  commitHistorySnapshot(beforeSnapshot);
+}
+
+function updateArrowStyleControls() {
+  arrowColorSwatches.forEach((button) => {
+    const color = normalizeHexColor(button.dataset.arrowColor);
+    button.classList.toggle("is-selected", color === viewState.arrowColor);
+    button.setAttribute("aria-pressed", String(color === viewState.arrowColor));
+  });
+
+  arrowOpacityButtons.forEach((button) => {
+    const opacity = normalizeArrowOpacity(button.dataset.arrowOpacity);
+    const selected = opacity !== null && Math.abs(opacity - viewState.arrowOpacity) < 0.001;
+    button.classList.toggle("is-selected", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  });
+}
+
+function syncArrowStyleControlsFromSelection() {
+  const selectedArrow = getSelectedArrowPairs()
+    .map((pair) => normalizeArrow(state.arrows[getArrowKey(pair.from, pair.to)]))
+    .find((arrow) => arrow && !arrow.hidden);
+
+  if (selectedArrow) {
+    viewState.arrowColor = selectedArrow.color;
+    viewState.arrowOpacity = selectedArrow.opacity;
+  }
+
+  updateArrowStyleControls();
 }
 
 function syncEditingRows() {
@@ -2841,6 +2910,7 @@ function updateArrowElement(element, arrow) {
   const track = element.querySelector(".arrow-track");
   element.style.transform = baseTransform;
   element.style.setProperty("--arrow-color", arrow.color);
+  element.style.setProperty("--arrow-opacity", String(arrow.opacity));
   element.classList.toggle("is-hidden", arrow.hidden);
   element.classList.toggle("is-selected", isArrowSelected(arrow));
   if (track) {
@@ -3598,6 +3668,7 @@ function updateAllArrowStates() {
 function updateSelection() {
   const selectedCells = getSelectedCells();
   const selectedOperators = getSelectedOperators();
+  syncArrowStyleControlsFromSelection();
   if (selectedCells.length === 0 && selectedOperators.length === 0) {
     selectionText.textContent = "尚未选择。";
     return;
@@ -4024,15 +4095,18 @@ hideArrowButton.addEventListener("click", (event) => {
   setSelectedArrowsVisibility(false);
 });
 
-arrowColorInput?.addEventListener("input", () => {
-  const color = normalizeHexColor(arrowColorInput.value);
-  if (color) {
-    viewState.arrowColor = color;
-  }
+arrowColorSwatches.forEach((button) => {
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    setSelectedArrowsColor(button.dataset.arrowColor);
+  });
 });
 
-arrowColorInput?.addEventListener("change", () => {
-  setSelectedArrowsColor(arrowColorInput.value);
+arrowOpacityButtons.forEach((button) => {
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    setSelectedArrowsOpacity(button.dataset.arrowOpacity);
+  });
 });
 
 addWidthLeftButton?.addEventListener("click", (event) => {
@@ -4299,9 +4373,7 @@ async function initializeApp() {
   rowRuleSelect.value = viewState.rowRule;
   detailPreviewSelect.value = viewState.detailPreview ? "on" : "off";
   markerVisibilitySelect.value = viewState.markersVisible ? "on" : "off";
-  if (arrowColorInput) {
-    arrowColorInput.value = viewState.arrowColor;
-  }
+  updateArrowStyleControls();
   updateShapeControls();
   renderCells();
   renderConfig();

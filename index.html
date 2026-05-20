@@ -16,18 +16,36 @@
       </div>
 
       <div class="board-window-toolbar" aria-label="白板窗口控制">
-        <button type="button" id="minimizeBoardsButton" disabled>最小化板子</button>
         <button type="button" id="maximizeBoardsButton" disabled>最大化板子</button>
-        <button type="button" id="minimizeBoxesButton" disabled>最小化方框</button>
+        <button type="button" id="minimizeBoardsButton" disabled>最小化板子</button>
         <button type="button" id="maximizeBoxesButton" disabled>最大化方框</button>
+        <button type="button" id="minimizeBoxesButton" disabled>最小化方框</button>
         <button type="button" id="showMiniOperatorButton" disabled>出现迷你框</button>
         <button type="button" id="hideMiniOperatorButton" disabled>去掉迷你框</button>
         <button type="button" id="showArrowButton" disabled>出现箭头</button>
         <button type="button" id="hideArrowButton" disabled>去掉箭头</button>
-        <label class="arrow-color-control" title="箭头颜色">
+        <div class="arrow-color-control" aria-label="箭头颜色">
           <span>箭头颜色</span>
-          <input id="arrowColorInput" type="color" value="#357ded" aria-label="箭头颜色">
-        </label>
+          <div class="arrow-color-swatches" id="arrowColorSwatches">
+            <button type="button" class="arrow-color-swatch" data-arrow-color="#d00000" style="--swatch-color: #d00000;" aria-label="红色"></button>
+            <button type="button" class="arrow-color-swatch" data-arrow-color="#ff1f1f" style="--swatch-color: #ff1f1f;" aria-label="亮红色"></button>
+            <button type="button" class="arrow-color-swatch" data-arrow-color="#ffc000" style="--swatch-color: #ffc000;" aria-label="橙黄色"></button>
+            <button type="button" class="arrow-color-swatch" data-arrow-color="#fff200" style="--swatch-color: #fff200;" aria-label="黄色"></button>
+            <button type="button" class="arrow-color-swatch" data-arrow-color="#92d050" style="--swatch-color: #92d050;" aria-label="浅绿色"></button>
+            <button type="button" class="arrow-color-swatch" data-arrow-color="#00b050" style="--swatch-color: #00b050;" aria-label="绿色"></button>
+            <button type="button" class="arrow-color-swatch" data-arrow-color="#00b0f0" style="--swatch-color: #00b0f0;" aria-label="青色"></button>
+            <button type="button" class="arrow-color-swatch" data-arrow-color="#0070c0" style="--swatch-color: #0070c0;" aria-label="蓝色"></button>
+            <button type="button" class="arrow-color-swatch" data-arrow-color="#002060" style="--swatch-color: #002060;" aria-label="深蓝色"></button>
+            <button type="button" class="arrow-color-swatch" data-arrow-color="#7030a0" style="--swatch-color: #7030a0;" aria-label="紫色"></button>
+          </div>
+          <span>透明度</span>
+          <div class="arrow-opacity-options" id="arrowOpacityOptions">
+            <button type="button" data-arrow-opacity="1">100%</button>
+            <button type="button" data-arrow-opacity="0.75">75%</button>
+            <button type="button" data-arrow-opacity="0.5">50%</button>
+            <button type="button" data-arrow-opacity="0.25">25%</button>
+          </div>
+        </div>
       </div>
 
       <div class="text-format-toolbar top-format-toolbar" id="topFormatToolbar" aria-label="文字格式">
