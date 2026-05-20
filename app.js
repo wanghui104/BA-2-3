@@ -13,6 +13,10 @@
 const ZOOM_BASE = 2;
 const ZOOM_MIN = 0.55;
 const ZOOM_MAX = 7;
+const CAMERA_PAN_STEP = 8;
+const CAMERA_PAN_LIMIT = 1200;
+const CAMERA_DEFAULT_PAN_Y = 0;
+const CAMERA_DEFAULT_PAN_Z = 0;
 const DIMENSION_MIN = 1;
 const DIMENSION_MAX = 8;
 const CELL_SIZE_LIMITS = {
@@ -157,6 +161,8 @@ const excelTableRack = document.querySelector("#excelTableRack");
 const sliceControls = document.querySelector("#sliceControls");
 const resetViewButton = document.querySelector("#resetView");
 const viewReadout = document.querySelector("#viewReadout");
+const cameraMoveButtons = document.querySelectorAll("[data-camera-move]");
+const cameraResetButton = document.querySelector("[data-camera-reset]");
 const spacingInput = document.querySelector("#spacingInput");
 const spacingReadout = document.querySelector("#spacingReadout");
 const selectionText = document.querySelector("#selectionText");
@@ -200,9 +206,12 @@ const arrowOpacityButtons = document.querySelectorAll("[data-arrow-opacity]");
 const topFormatToolbar = document.querySelector("#topFormatToolbar");
 
 const viewState = {
-  rotationX: -18,
-  rotationY: -34,
+  rotationX: -6,
+  rotationY: -10,
   zoom: ZOOM_BASE,
+  panX: 0,
+  panY: CAMERA_DEFAULT_PAN_Y,
+  panZ: CAMERA_DEFAULT_PAN_Z,
   gap: GAP_MIN,
   rowRule: ROW_RULES.GLOBAL_MAX,
   detailPreview: false,
@@ -213,10 +222,16 @@ const viewState = {
   excelTableSelected: false,
   selectedId: null,
   selectedIds: new Set(),
+  hasCustomPan: false,
   dragging: false,
   moved: false,
   lastX: 0,
   lastY: 0
+};
+
+const cameraMoveState = {
+  activeDirections: new Set(),
+  frameId: null
 };
 
 const historyState = {
@@ -429,6 +444,7 @@ function applyHistorySnapshot(snapshot) {
   detailPreviewSelect.value = viewState.detailPreview ? "on" : "off";
   markerVisibilitySelect.value = viewState.markersVisible ? "on" : "off";
   updateArrowStyleControls();
+  updateCameraMoveControls();
   updateShapeControls();
   renderCells();
   renderConfig();
@@ -639,6 +655,66 @@ function getCellOrigin(coord) {
     y: getSliceOffset(state.sliceSizes.heights, coord.y),
     z: getSliceOffset(state.sliceSizes.depths, coord.z) + size.depth / 2
   };
+}
+
+function getCuboidContentBoundsX() {
+  const totalWidth = sumList(state.sliceSizes.widths) + (state.dimensions.width - 1) * getGap();
+  return {
+    left: -totalWidth / 2,
+    right: totalWidth / 2
+  };
+}
+
+function getExcelTableBoundsX() {
+  const columns = normalizeExcelColumns(state.excelTable?.columns);
+  const contentWidth = columns.reduce((sum, column) => sum + column.width, 0);
+  const tableWidth = EXCEL_TABLE_ROW_HEADER_WIDTH + contentWidth;
+  const cuboidBounds = getCuboidContentBoundsX();
+  const tableLeft = cuboidBounds.left - EXCEL_TABLE_GAP_FROM_CUBOID - tableWidth;
+  return {
+    left: tableLeft,
+    right: tableLeft + tableWidth
+  };
+}
+
+function getOperatorContentBoundsX() {
+  const cuboidBounds = getCuboidContentBoundsX();
+  const operatorBounds = Object.values(state.operators || {})
+    .map((operator) => normalizeOperator(operator.axis, operator.coord, operator))
+    .filter(Boolean)
+    .map((operator) => {
+      const center = getOperatorCenter(operator);
+      const left = center.x - state.operatorSize.width / 2 + cuboidBounds.left;
+      return {
+        left,
+        right: left + state.operatorSize.width
+      };
+    });
+
+  if (operatorBounds.length === 0) {
+    return cuboidBounds;
+  }
+
+  return {
+    left: Math.min(...operatorBounds.map((bounds) => bounds.left)),
+    right: Math.max(...operatorBounds.map((bounds) => bounds.right))
+  };
+}
+
+function getContentBoundsX() {
+  const cuboidBounds = getCuboidContentBoundsX();
+  const excelBounds = getExcelTableBoundsX();
+  const operatorBounds = getOperatorContentBoundsX();
+  return {
+    left: Math.min(cuboidBounds.left, excelBounds.left, operatorBounds.left),
+    right: Math.max(cuboidBounds.right, excelBounds.right, operatorBounds.right)
+  };
+}
+
+function getDefaultCameraPanX() {
+  const bounds = getContentBoundsX();
+  const contentCenter = (bounds.left + bounds.right) / 2;
+  return clamp(-contentCenter, -CAMERA_PAN_LIMIT, CAMERA_PAN_LIMIT);
 }
 
 function getGlobalEdgePoint(coord, edgeNumber) {
@@ -1780,6 +1856,7 @@ function setExcelTableSelected(isSelected) {
   viewState.excelTableSelected = isSelected;
   modelStage.classList.toggle("is-excel-table-selected", isSelected);
   excelTableRack?.classList.toggle("is-selected", isSelected);
+  updateCameraMoveControls();
 }
 
 function selectExcelTable() {
@@ -1904,6 +1981,7 @@ function updateWindowControlButtons() {
   hideMiniOperatorButton.title = miniOperatorDisabled ? "按住 Ctrl 选中两个相邻小长方体" : "隐藏这两个相邻方框之间的迷你框";
   showArrowButton.title = arrowButtonsDisabled ? "按住 Ctrl 按顺序选中两个或更多小长方体" : `按选择顺序创建 ${arrowPairs.length} 条箭头`;
   hideArrowButton.title = arrowButtonsDisabled ? "按住 Ctrl 按顺序选中两个或更多小长方体" : `按选择顺序去掉 ${arrowPairs.length} 条箭头`;
+  updateCameraMoveControls();
 }
 
 function setSelectedBoardsVisibility(hidden) {
@@ -2271,6 +2349,7 @@ function beginEditing(cell, note) {
     beforeSnapshot: createHistorySnapshot()
   };
   updateFormatToolbarState();
+  updateCameraMoveControls();
   syncEditingRows();
   updateEditingOverlayBounds();
   placeCaretAtEnd(editor.querySelector(".editor-block"));
@@ -2987,8 +3066,7 @@ function renderExcelTableRows() {
   const contentWidth = columns.reduce((sum, column) => sum + column.width, 0);
   const tableWidth = EXCEL_TABLE_ROW_HEADER_WIDTH + contentWidth;
   const tableHeight = EXCEL_TABLE_HEADER_HEIGHT + state.excelTable.rows.reduce((sum, row) => sum + row.height, 0);
-  const totalCuboidWidth = sumList(state.sliceSizes.widths) + (state.dimensions.width - 1) * getGap();
-  const tableX = -totalCuboidWidth / 2 - EXCEL_TABLE_GAP_FROM_CUBOID - tableWidth;
+  const tableX = getExcelTableBoundsX().left;
   const gridTemplateColumns = `${EXCEL_TABLE_ROW_HEADER_WIDTH}px ${columns.map((column) => `${column.width}px`).join(" ")}`;
   excelTableRack.style.setProperty("--excel-table-width", `${tableWidth}px`);
   excelTableRack.style.setProperty("--excel-table-height", `${tableHeight}px`);
@@ -3409,6 +3487,11 @@ function renderCells() {
   cuboid.classList.toggle("has-markers", viewState.markersVisible);
   updateSpacingControls();
   setCuboidBounds();
+  if (!viewState.hasCustomPan) {
+    viewState.panX = getDefaultCameraPanX();
+    viewState.panY = CAMERA_DEFAULT_PAN_Y;
+    viewState.panZ = CAMERA_DEFAULT_PAN_Z;
+  }
   cells.forEach((cell) => {
     cuboid.appendChild(renderCell(cell));
   });
@@ -3669,6 +3752,7 @@ function updateSelection() {
   const selectedCells = getSelectedCells();
   const selectedOperators = getSelectedOperators();
   syncArrowStyleControlsFromSelection();
+  updateCameraMoveControls();
   if (selectedCells.length === 0 && selectedOperators.length === 0) {
     selectionText.textContent = "尚未选择。";
     return;
@@ -3687,9 +3771,137 @@ function updateSelection() {
   selectionText.textContent = `已选择 ${getSelectedItemCount()} 个对象。`;
 }
 
+function isFormControlActive() {
+  const activeElement = document.activeElement;
+  if (!activeElement || activeElement === document.body) {
+    return false;
+  }
+
+  if (activeElement.closest?.(".camera-move-pad")) {
+    return false;
+  }
+
+  return Boolean(activeElement.closest?.("input, textarea, select, [contenteditable='true'], .note-editor"));
+}
+
+function canUseCameraMoveControls() {
+  return !editingState
+    && !viewState.excelTableSelected
+    && viewState.selectedIds.size === 0
+    && !isFormControlActive();
+}
+
+function updateCameraMoveControls() {
+  const disabled = !canUseCameraMoveControls();
+  cameraMoveButtons.forEach((button) => {
+    button.disabled = disabled;
+  });
+  if (cameraResetButton) {
+    cameraResetButton.disabled = false;
+  }
+  if (disabled) {
+    stopCameraMove();
+  }
+}
+
+function applyCameraPanDelta(deltaX, deltaY, deltaZ) {
+  viewState.panX = clamp(viewState.panX + deltaX, -CAMERA_PAN_LIMIT, CAMERA_PAN_LIMIT);
+  viewState.panY = clamp(viewState.panY + deltaY, -CAMERA_PAN_LIMIT, CAMERA_PAN_LIMIT);
+  viewState.panZ = clamp(viewState.panZ + deltaZ, -CAMERA_PAN_LIMIT, CAMERA_PAN_LIMIT);
+  viewState.hasCustomPan = true;
+  applyViewTransform();
+}
+
+function stepCameraMove() {
+  if (cameraMoveState.activeDirections.size === 0 || !canUseCameraMoveControls()) {
+    stopCameraMove();
+    return;
+  }
+
+  let deltaX = 0;
+  let deltaY = 0;
+  let deltaZ = 0;
+  if (cameraMoveState.activeDirections.has("left")) {
+    deltaX += CAMERA_PAN_STEP;
+  }
+  if (cameraMoveState.activeDirections.has("right")) {
+    deltaX -= CAMERA_PAN_STEP;
+  }
+  if (cameraMoveState.activeDirections.has("up")) {
+    deltaY += CAMERA_PAN_STEP;
+  }
+  if (cameraMoveState.activeDirections.has("down")) {
+    deltaY -= CAMERA_PAN_STEP;
+  }
+  if (cameraMoveState.activeDirections.has("forward")) {
+    deltaZ += CAMERA_PAN_STEP;
+  }
+  if (cameraMoveState.activeDirections.has("back")) {
+    deltaZ -= CAMERA_PAN_STEP;
+  }
+
+  if (deltaX || deltaY || deltaZ) {
+    applyCameraPanDelta(deltaX, deltaY, deltaZ);
+  }
+  cameraMoveState.frameId = window.requestAnimationFrame(stepCameraMove);
+}
+
+function startCameraMove(direction) {
+  if (!direction || !canUseCameraMoveControls()) {
+    updateCameraMoveControls();
+    return;
+  }
+
+  cameraMoveState.activeDirections.add(direction);
+  cameraMoveButtons.forEach((button) => {
+    button.classList.toggle("is-active", cameraMoveState.activeDirections.has(button.dataset.cameraMove));
+  });
+  if (cameraMoveState.frameId === null) {
+    cameraMoveState.frameId = window.requestAnimationFrame(stepCameraMove);
+  }
+}
+
+function stopCameraMove(direction) {
+  if (direction) {
+    cameraMoveState.activeDirections.delete(direction);
+  } else {
+    cameraMoveState.activeDirections.clear();
+  }
+
+  cameraMoveButtons.forEach((button) => {
+    button.classList.toggle("is-active", cameraMoveState.activeDirections.has(button.dataset.cameraMove));
+  });
+  if (cameraMoveState.activeDirections.size === 0 && cameraMoveState.frameId !== null) {
+    window.cancelAnimationFrame(cameraMoveState.frameId);
+    cameraMoveState.frameId = null;
+  }
+}
+
+function getCameraMoveDirectionFromKey(event) {
+  if (event.code === "KeyW") {
+    return "forward";
+  }
+  if (event.code === "KeyS") {
+    return "back";
+  }
+  if (event.code === "KeyA") {
+    return "left";
+  }
+  if (event.code === "KeyD") {
+    return "right";
+  }
+  if (event.code === "Space") {
+    return "up";
+  }
+  if (event.code === "ControlLeft" || event.code === "ControlRight") {
+    return "down";
+  }
+  return null;
+}
+
 function applyViewTransform() {
-  modelStage.style.transform = `scale(${viewState.zoom}) rotateX(${viewState.rotationX}deg) rotateY(${viewState.rotationY}deg)`;
-  viewReadout.textContent = `X ${Math.round(viewState.rotationX)} deg · Y ${Math.round(viewState.rotationY)} deg · ${Math.round((viewState.zoom / ZOOM_BASE) * 100)}%`;
+  modelStage.style.transform = `translate3d(${viewState.panX}px, ${viewState.panY}px, ${viewState.panZ}px) scale(${viewState.zoom}) rotateX(${viewState.rotationX}deg) rotateY(${viewState.rotationY}deg)`;
+  viewReadout.textContent = `X ${Math.round(viewState.rotationX)} deg · Y ${Math.round(viewState.rotationY)} deg · ${Math.round((viewState.zoom / ZOOM_BASE) * 100)}% · P ${Math.round(viewState.panX)}, ${Math.round(viewState.panY)}, ${Math.round(viewState.panZ)}`;
   updateBillboards();
   updateEditingOverlayBounds();
 }
@@ -4008,9 +4220,13 @@ function resetView() {
     stopEditing({ commit: true });
   }
 
-  viewState.rotationX = -18;
-  viewState.rotationY = -34;
+  viewState.rotationX = -6;
+  viewState.rotationY = -10;
   viewState.zoom = ZOOM_BASE;
+  viewState.panX = getDefaultCameraPanX();
+  viewState.panY = CAMERA_DEFAULT_PAN_Y;
+  viewState.panZ = CAMERA_DEFAULT_PAN_Z;
+  viewState.hasCustomPan = false;
   viewState.selectedId = null;
   viewState.selectedIds.clear();
   cells.forEach((cell) => {
@@ -4052,6 +4268,28 @@ window.addEventListener("beforeunload", (event) => {
   event.returnValue = "";
 });
 resetViewButton.addEventListener("click", resetView);
+cameraResetButton?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  resetView();
+});
+cameraMoveButtons.forEach((button) => {
+  button.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    button.setPointerCapture(event.pointerId);
+    startCameraMove(button.dataset.cameraMove);
+  });
+  button.addEventListener("pointerup", (event) => {
+    event.stopPropagation();
+    stopCameraMove(button.dataset.cameraMove);
+  });
+  button.addEventListener("pointercancel", () => {
+    stopCameraMove(button.dataset.cameraMove);
+  });
+  button.addEventListener("lostpointercapture", () => {
+    stopCameraMove(button.dataset.cameraMove);
+  });
+});
 undoButton.addEventListener("click", undoHistoryStep);
 redoButton.addEventListener("click", redoHistoryStep);
 saveButton.addEventListener("click", saveBoardState);
@@ -4350,6 +4588,13 @@ document.addEventListener("keydown", (event) => {
     return;
   }
 
+  const cameraDirection = getCameraMoveDirectionFromKey(event);
+  if (cameraDirection && canUseCameraMoveControls()) {
+    event.preventDefault();
+    startCameraMove(cameraDirection);
+    return;
+  }
+
   if (event.key !== "Escape" || editingState) {
     return;
   }
@@ -4366,6 +4611,21 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     clearSelection();
   }
+});
+
+document.addEventListener("keyup", (event) => {
+  const cameraDirection = getCameraMoveDirectionFromKey(event);
+  if (cameraDirection) {
+    stopCameraMove(cameraDirection);
+  }
+});
+
+window.addEventListener("blur", () => {
+  stopCameraMove();
+});
+document.addEventListener("focusin", updateCameraMoveControls);
+document.addEventListener("focusout", () => {
+  window.setTimeout(updateCameraMoveControls, 0);
 });
 
 async function initializeApp() {

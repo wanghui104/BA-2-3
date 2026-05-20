@@ -465,7 +465,7 @@ button {
   width: min(86vw, 840px);
   height: min(78vh, 620px);
   transform-style: preserve-3d;
-  transform: scale(1) rotateX(-18deg) rotateY(-34deg);
+  transform: scale(1) rotateX(-6deg) rotateY(-10deg);
   transition: transform 80ms linear;
 }
 
@@ -927,7 +927,7 @@ body.is-resizing-excel-row * {
   background: var(--panel);
   color: #223044;
   box-shadow: 0 10px 22px rgba(38, 47, 64, 0.14);
-  transform: translate(-50%, -50%) rotateY(34deg) rotateX(18deg);
+  transform: translate(-50%, -50%) rotateY(10deg) rotateX(6deg);
   transform-origin: center center;
   transform-style: preserve-3d;
   pointer-events: auto;
@@ -1361,7 +1361,7 @@ body.is-resizing-excel-row * {
   right: -26px;
   top: -24px;
   font-size: 13px;
-  transform: rotateY(34deg) rotateX(18deg);
+  transform: rotateY(10deg) rotateX(6deg);
   transform-origin: center;
 }
 
@@ -1871,6 +1871,83 @@ body.is-resizing-excel-row * {
   font-size: 13px;
   font-weight: 700;
   white-space: nowrap;
+}
+
+.camera-move-pad {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  z-index: 7;
+  display: grid;
+  grid-template-columns: repeat(3, 54px);
+  grid-template-areas:
+    ". forward up"
+    "left reset right"
+    ". back down";
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid rgba(28, 36, 48, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: 0 12px 28px rgba(38, 47, 64, 0.12);
+  backdrop-filter: blur(10px);
+  transform: translateY(-50%);
+}
+
+.camera-move-pad button {
+  width: 54px;
+  height: 32px;
+  border: 1px solid rgba(28, 36, 48, 0.16);
+  border-radius: 6px;
+  background: #ffffff;
+  color: #263241;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 850;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.camera-move-pad button:hover:not(:disabled),
+.camera-move-pad button:focus-visible,
+.camera-move-pad button.is-active {
+  border-color: rgba(42, 157, 143, 0.45);
+  background: #1c2430;
+  color: #ffffff;
+  outline: 0;
+}
+
+.camera-move-pad button:disabled {
+  color: rgba(52, 64, 84, 0.36);
+  cursor: not-allowed;
+}
+
+.camera-move-pad [data-camera-move="forward"] {
+  grid-area: forward;
+}
+
+.camera-move-pad [data-camera-move="back"] {
+  grid-area: back;
+}
+
+.camera-move-pad [data-camera-move="left"] {
+  grid-area: left;
+}
+
+.camera-move-pad [data-camera-move="right"] {
+  grid-area: right;
+}
+
+.camera-move-pad [data-camera-move="up"] {
+  grid-area: up;
+}
+
+.camera-move-pad [data-camera-move="down"] {
+  grid-area: down;
+}
+
+.camera-move-pad [data-camera-reset] {
+  grid-area: reset;
 }
 
 .sr-status {

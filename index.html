@@ -242,7 +242,16 @@
                   <input id="spacingInput" type="range" min="8" max="232" step="1" value="8">
                   <output id="spacingReadout" for="spacingInput">8 px</output>
                 </label>
-                <span id="viewReadout">X -18 deg · Y -34 deg · 100%</span>
+                <span id="viewReadout">X -6 deg · Y -10 deg · 100%</span>
+              </div>
+              <div class="camera-move-pad" id="cameraMovePad" aria-label="视角平移">
+                <button type="button" data-camera-move="forward" title="前移 W">前 W</button>
+                <button type="button" data-camera-move="up" title="上移 Space">上 Space</button>
+                <button type="button" data-camera-move="left" title="左移 A">左 A</button>
+                <button type="button" data-camera-reset title="复位视角位置">复位</button>
+                <button type="button" data-camera-move="right" title="右移 D">右 D</button>
+                <button type="button" data-camera-move="down" title="下移 Ctrl">下 Ctrl</button>
+                <button type="button" data-camera-move="back" title="后移 S">后 S</button>
               </div>
               <p class="sr-status" id="selectionText" aria-live="polite">尚未选择。</p>
             </div>
