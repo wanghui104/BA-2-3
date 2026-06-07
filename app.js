@@ -15,6 +15,8 @@ const ZOOM_MIN = 0.55;
 const ZOOM_MAX = 7;
 const CAMERA_PAN_STEP = 8;
 const CAMERA_PAN_LIMIT = 1200;
+const CAMERA_DEFAULT_ROTATION_X = -6;
+const CAMERA_DEFAULT_ROTATION_Y = -10;
 const CAMERA_DEFAULT_PAN_Y = 0;
 const CAMERA_DEFAULT_PAN_Z = 0;
 const DIMENSION_MIN = 1;
@@ -192,6 +194,7 @@ const structureReadout = document.querySelector("#structureReadout");
 const undoButton = document.querySelector("#undoButton");
 const redoButton = document.querySelector("#redoButton");
 const saveButton = document.querySelector("#saveButton");
+const saveInitialCameraButton = document.querySelector("#saveInitialCameraButton");
 const saveStatus = document.querySelector("#saveStatus");
 const minimizeBoardsButton = document.querySelector("#minimizeBoardsButton");
 const maximizeBoardsButton = document.querySelector("#maximizeBoardsButton");
@@ -206,8 +209,8 @@ const arrowOpacityButtons = document.querySelectorAll("[data-arrow-opacity]");
 const topFormatToolbar = document.querySelector("#topFormatToolbar");
 
 const viewState = {
-  rotationX: -6,
-  rotationY: -10,
+  rotationX: CAMERA_DEFAULT_ROTATION_X,
+  rotationY: CAMERA_DEFAULT_ROTATION_Y,
   zoom: ZOOM_BASE,
   panX: 0,
   panY: CAMERA_DEFAULT_PAN_Y,
@@ -246,6 +249,8 @@ const saveState = {
   lastSavedAt: null,
   loadError: null
 };
+
+let initialCameraState = createDefaultInitialCamera();
 
 let spacingChangeSnapshot = null;
 let textSizeChangeSnapshot = null;
@@ -301,6 +306,63 @@ function clamp(value, min, max) {
 
 function cloneData(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function createDefaultInitialCamera() {
+  return {
+    rotationX: CAMERA_DEFAULT_ROTATION_X,
+    rotationY: CAMERA_DEFAULT_ROTATION_Y,
+    zoom: ZOOM_BASE,
+    panX: null,
+    panY: CAMERA_DEFAULT_PAN_Y,
+    panZ: CAMERA_DEFAULT_PAN_Z
+  };
+}
+
+function getFiniteNumber(value, fallback) {
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function normalizeCameraPosition(camera) {
+  const defaults = createDefaultInitialCamera();
+  return {
+    rotationX: clamp(getFiniteNumber(camera?.rotationX, defaults.rotationX), -78, 78),
+    rotationY: getFiniteNumber(camera?.rotationY, defaults.rotationY),
+    zoom: clamp(getFiniteNumber(camera?.zoom, defaults.zoom), ZOOM_MIN, ZOOM_MAX),
+    panX: Number.isFinite(camera?.panX) ? clamp(camera.panX, -CAMERA_PAN_LIMIT, CAMERA_PAN_LIMIT) : defaults.panX,
+    panY: clamp(getFiniteNumber(camera?.panY, defaults.panY), -CAMERA_PAN_LIMIT, CAMERA_PAN_LIMIT),
+    panZ: clamp(getFiniteNumber(camera?.panZ, defaults.panZ), -CAMERA_PAN_LIMIT, CAMERA_PAN_LIMIT)
+  };
+}
+
+function captureCurrentCameraPosition() {
+  return normalizeCameraPosition({
+    rotationX: viewState.rotationX,
+    rotationY: viewState.rotationY,
+    zoom: viewState.zoom,
+    panX: viewState.panX,
+    panY: viewState.panY,
+    panZ: viewState.panZ
+  });
+}
+
+function resolveInitialCameraPosition() {
+  const camera = normalizeCameraPosition(initialCameraState);
+  return {
+    ...camera,
+    panX: Number.isFinite(camera.panX) ? camera.panX : getDefaultCameraPanX()
+  };
+}
+
+function applyInitialCameraPosition() {
+  const camera = resolveInitialCameraPosition();
+  viewState.rotationX = camera.rotationX;
+  viewState.rotationY = camera.rotationY;
+  viewState.zoom = camera.zoom;
+  viewState.panX = camera.panX;
+  viewState.panY = camera.panY;
+  viewState.panZ = camera.panZ;
+  viewState.hasCustomPan = Number.isFinite(initialCameraState.panX);
 }
 
 function normalizeExcelColumns(columns) {
@@ -377,6 +439,7 @@ function updateHistoryButtons() {
 
 function updateSaveStatus({ variant = null, message = null } = {}) {
   saveButton.disabled = saveState.isSaving;
+  saveInitialCameraButton.disabled = saveState.isSaving;
   saveStatus.classList.toggle("is-dirty", saveState.isDirty && variant !== "error");
   saveStatus.classList.toggle("is-error", variant === "error");
 
@@ -507,7 +570,8 @@ function createPersistedState() {
       markersVisible: viewState.markersVisible,
       textSize: viewState.textSize,
       arrowColor: viewState.arrowColor,
-      arrowOpacity: viewState.arrowOpacity
+      arrowOpacity: viewState.arrowOpacity,
+      initialCamera: cloneData(initialCameraState)
     },
     boards: cloneData(state.boards),
     excelTable: cloneData(state.excelTable)
@@ -547,8 +611,10 @@ function applyPersistedState(payload) {
     viewState.textSize = typeof payload.view.textSize === "number" ? payload.view.textSize : viewState.textSize;
     viewState.arrowColor = normalizeHexColor(payload.view.arrowColor) || viewState.arrowColor;
     viewState.arrowOpacity = normalizeArrowOpacity(payload.view.arrowOpacity) ?? viewState.arrowOpacity;
+    initialCameraState = normalizeCameraPosition(payload.view.initialCamera);
   }
 
+  applyInitialCameraPosition();
   ensureBoards();
 }
 
@@ -574,12 +640,13 @@ async function loadSavedState() {
   updateSaveStatus();
 }
 
-async function saveBoardState() {
+async function saveBoardState(options = {}) {
   if (editingState) {
     stopEditing({ commit: true });
   }
   stopExcelEditing();
 
+  const successMessage = options?.successMessage || "已保存";
   saveState.isSaving = true;
   updateSaveStatus();
   let saved = false;
@@ -605,8 +672,13 @@ async function saveBoardState() {
     saveState.isDirty = true;
   } finally {
     saveState.isSaving = false;
-    updateSaveStatus(saved ? { message: "已保存" } : { variant: "error", message: "保存失败" });
+    updateSaveStatus(saved ? { message: successMessage } : { variant: "error", message: "保存失败" });
   }
+}
+
+async function saveInitialCameraPosition() {
+  initialCameraState = captureCurrentCameraPosition();
+  await saveBoardState({ successMessage: "初始镜头已保存" });
 }
 
 function getMaxGap() {
@@ -4220,13 +4292,7 @@ function resetView() {
     stopEditing({ commit: true });
   }
 
-  viewState.rotationX = -6;
-  viewState.rotationY = -10;
-  viewState.zoom = ZOOM_BASE;
-  viewState.panX = getDefaultCameraPanX();
-  viewState.panY = CAMERA_DEFAULT_PAN_Y;
-  viewState.panZ = CAMERA_DEFAULT_PAN_Z;
-  viewState.hasCustomPan = false;
+  applyInitialCameraPosition();
   viewState.selectedId = null;
   viewState.selectedIds.clear();
   cells.forEach((cell) => {
@@ -4293,6 +4359,7 @@ cameraMoveButtons.forEach((button) => {
 undoButton.addEventListener("click", undoHistoryStep);
 redoButton.addEventListener("click", redoHistoryStep);
 saveButton.addEventListener("click", saveBoardState);
+saveInitialCameraButton.addEventListener("click", saveInitialCameraPosition);
 minimizeBoardsButton.addEventListener("click", (event) => {
   event.stopPropagation();
   setSelectedBoardsVisibility(true);
@@ -4657,5 +4724,6 @@ window.knowledgeBoard = {
   viewState,
   ROW_RULES,
   resetView,
-  saveBoardState
+  saveBoardState,
+  saveInitialCameraPosition
 };

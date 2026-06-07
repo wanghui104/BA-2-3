@@ -99,6 +99,10 @@ button {
   cursor: wait;
 }
 
+.save-initial-camera-button {
+  min-width: 132px;
+}
+
 .save-status {
   min-width: 46px;
   display: flex;
