@@ -56,6 +56,10 @@ const ARROW_ENDPOINT_OVERLAP = 5;
 const ARROW_MIN_LENGTH = 28;
 const BULLET_LIST_STYLES = ["disc", "circle", "diamond"];
 const NUMBERED_LIST_STYLES = ["decimal", "lower-alpha", "lower-roman"];
+const MATCH_STOP_WORDS = new Set([
+  "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in", "into",
+  "is", "of", "on", "or", "the", "to", "was", "were", "with"
+]);
 const EXCEL_TABLE_POSITION = {
   y: -214,
   z: -92
@@ -251,6 +255,7 @@ const saveState = {
 };
 
 let initialCameraState = createDefaultInitialCamera();
+let textMatchHighlightState = null;
 
 let spacingChangeSnapshot = null;
 let textSizeChangeSnapshot = null;
@@ -1299,7 +1304,245 @@ function getFullText(cell) {
   return `${cell.label}: ${detail}`;
 }
 
-function appendMarkedText(parent, block) {
+function getTextMatchLineId(boardKey, blockIndex) {
+  return `${boardKey}:${blockIndex}`;
+}
+
+function getExcelTextMatchLineId(rowIndex, columnId) {
+  return `excel:${rowIndex}:${columnId}`;
+}
+
+function getTextMatchLineRecords() {
+  const boardRecords = Object.entries(state.boards).flatMap(([key, board]) => (
+    normalizeBoard(key, board).blocks.map((block, index) => ({
+      id: getTextMatchLineId(key, index),
+      source: "board",
+      key,
+      index,
+      text: block.text
+    }))
+  ));
+  const excelRecords = normalizeExcelTable(state.excelTable).rows.map((row, rowIndex) => ({
+    id: getExcelTextMatchLineId(rowIndex, "name"),
+    source: "excel",
+    rowIndex,
+    columnId: "name",
+    text: row.cells.name
+  }));
+
+  return [...boardRecords, ...excelRecords].filter((record) => record.text.trim());
+}
+
+function isTextMatchAllowed() {
+  return !editingState;
+}
+
+function trimMatchRange(text, start, end) {
+  let nextStart = start;
+  let nextEnd = end;
+  while (nextStart < nextEnd && /[\s,.;:()[\]{}"'“”‘’]/u.test(text[nextStart])) {
+    nextStart += 1;
+  }
+  while (nextEnd > nextStart && /[\s,.;:()[\]{}"'“”‘’]/u.test(text[nextEnd - 1])) {
+    nextEnd -= 1;
+  }
+  return { start: nextStart, end: nextEnd };
+}
+
+function hasEnoughMatchSubstance(text) {
+  if (/[\p{Script=Han}]{4,}/u.test(text)) {
+    return true;
+  }
+
+  const effectiveWords = (text.match(/[a-z0-9]+/gi) || [])
+    .map((word) => word.toLowerCase())
+    .filter((word) => !MATCH_STOP_WORDS.has(word));
+  return effectiveWords.length >= 2;
+}
+
+function isLongerTextRange(first, second) {
+  return !second || (first.end - first.start) > (second.end - second.start);
+}
+
+function findLongestCommonTextMatch(firstText, secondText) {
+  const firstChars = Array.from(firstText);
+  const secondChars = Array.from(secondText);
+  const previous = Array(secondChars.length + 1).fill(0);
+  const current = Array(secondChars.length + 1).fill(0);
+  let best = null;
+
+  firstChars.forEach((firstChar, firstIndex) => {
+    for (let secondIndex = 0; secondIndex < secondChars.length; secondIndex += 1) {
+      if (firstChar.toLowerCase() === secondChars[secondIndex].toLowerCase()) {
+        current[secondIndex + 1] = previous[secondIndex] + 1;
+        const rawFirstEnd = firstIndex + 1;
+        const rawSecondEnd = secondIndex + 1;
+        const rawFirstStart = rawFirstEnd - current[secondIndex + 1];
+        const rawSecondStart = rawSecondEnd - current[secondIndex + 1];
+        const firstRange = trimMatchRange(firstText, rawFirstStart, rawFirstEnd);
+        const secondRange = trimMatchRange(secondText, rawSecondStart, rawSecondEnd);
+        const firstSlice = firstText.slice(firstRange.start, firstRange.end);
+        const secondSlice = secondText.slice(secondRange.start, secondRange.end);
+
+        if (firstRange.end > firstRange.start
+          && secondRange.end > secondRange.start
+          && hasEnoughMatchSubstance(firstSlice)
+          && hasEnoughMatchSubstance(secondSlice)
+          && isLongerTextRange(firstRange, best?.sourceRange)) {
+          best = {
+            sourceRange: firstRange,
+            targetRange: secondRange
+          };
+        }
+      } else {
+        current[secondIndex + 1] = 0;
+      }
+    }
+    previous.splice(0, previous.length, ...current);
+    current.fill(0);
+  });
+
+  return best;
+}
+
+function pushTextMatchRange(map, lineId, range) {
+  if (range.end <= range.start) {
+    return;
+  }
+  const ranges = map.get(lineId) || [];
+  if (!ranges.some((item) => item.start === range.start && item.end === range.end)) {
+    ranges.push(range);
+  }
+  map.set(lineId, ranges);
+}
+
+function getTextMatchHighlightRanges(lineId) {
+  return textMatchHighlightState?.ranges.get(lineId) || [];
+}
+
+function updateRenderedTextMatchHighlights() {
+  cuboid.querySelectorAll("[data-text-match-line][data-board-key][data-block-index]").forEach((line) => {
+    const board = normalizeBoard(line.dataset.boardKey, state.boards[line.dataset.boardKey]);
+    const block = board.blocks[Number.parseInt(line.dataset.blockIndex, 10)];
+    const content = line.querySelector(".note-line-content, .detail-line-content");
+    if (block && content) {
+      renderBlockContent(content, block, getTextMatchHighlightRanges(getTextMatchLineId(line.dataset.boardKey, Number.parseInt(line.dataset.blockIndex, 10))));
+    }
+  });
+  excelTableRack?.querySelectorAll("[data-text-match-line][data-row-index][data-column-id]").forEach((cell) => {
+    if (cell === document.activeElement) {
+      return;
+    }
+    const rowIndex = Number.parseInt(cell.dataset.rowIndex, 10);
+    const columnId = cell.dataset.columnId;
+    const text = state.excelTable.rows[rowIndex]?.cells?.[columnId] || "";
+    renderPlainTextContent(cell, text, getTextMatchHighlightRanges(getExcelTextMatchLineId(rowIndex, columnId)));
+  });
+}
+
+function clearTextMatchHighlights() {
+  if (!textMatchHighlightState) {
+    return;
+  }
+  textMatchHighlightState = null;
+  updateRenderedTextMatchHighlights();
+}
+
+function showTextMatchesForLine(boardKey, blockIndex) {
+  showTextMatchesForRecord(getTextMatchLineId(boardKey, blockIndex));
+}
+
+function showTextMatchesForExcelLine(rowIndex, columnId) {
+  showTextMatchesForRecord(getExcelTextMatchLineId(rowIndex, columnId));
+}
+
+function showTextMatchesForRecord(sourceId) {
+  if (!isTextMatchAllowed()) {
+    clearTextMatchHighlights();
+    return;
+  }
+
+  if (textMatchHighlightState?.sourceId === sourceId) {
+    return;
+  }
+
+  const records = getTextMatchLineRecords();
+  const source = records.find((record) => record.id === sourceId);
+  const ranges = new Map();
+  if (!source) {
+    clearTextMatchHighlights();
+    return;
+  }
+
+  records.forEach((record) => {
+    if (record.id === source.id) {
+      return;
+    }
+
+    const match = findLongestCommonTextMatch(source.text, record.text);
+    if (!match) {
+      return;
+    }
+
+    pushTextMatchRange(ranges, source.id, match.sourceRange);
+    pushTextMatchRange(ranges, record.id, match.targetRange);
+  });
+
+  textMatchHighlightState = ranges.size > 0 ? { sourceId, ranges } : null;
+  updateRenderedTextMatchHighlights();
+}
+
+function getHoveredNoteLine(event, root) {
+  return [...root.querySelectorAll(".note-line[data-board-key][data-block-index]")]
+    .map((line) => {
+      const target = line.querySelector(".note-line-content") || line;
+      const rect = target.getBoundingClientRect();
+      return { line, rect };
+    })
+    .filter(({ rect }) => (
+      event.clientX >= rect.left
+      && event.clientX <= rect.right
+      && event.clientY >= rect.top
+      && event.clientY <= rect.bottom
+    ))
+    .sort((first, second) => (
+      Math.abs(event.clientY - (first.rect.top + first.rect.bottom) / 2)
+      - Math.abs(event.clientY - (second.rect.top + second.rect.bottom) / 2)
+    ))[0]?.line || null;
+}
+
+function handleNoteTextMatchPointerMove(event) {
+  const line = getHoveredNoteLine(event, event.currentTarget);
+
+  if (!line) {
+    return;
+  }
+
+  const blockIndex = Number.parseInt(line.dataset.blockIndex, 10);
+  if (line.dataset.boardKey && Number.isInteger(blockIndex) && line.textContent.trim()) {
+    showTextMatchesForLine(line.dataset.boardKey, blockIndex);
+  }
+}
+
+function handleCuboidTextMatchPointerMove(event) {
+  if (!isTextMatchAllowed()) {
+    clearTextMatchHighlights();
+    return;
+  }
+
+  const line = getHoveredNoteLine(event, cuboid);
+  if (!line) {
+    clearTextMatchHighlights();
+    return;
+  }
+
+  const blockIndex = Number.parseInt(line.dataset.blockIndex, 10);
+  if (line.dataset.boardKey && Number.isInteger(blockIndex) && line.textContent.trim()) {
+    showTextMatchesForLine(line.dataset.boardKey, blockIndex);
+  }
+}
+
+function appendMarkedText(parent, block, highlightRanges = []) {
   if (!block.text) {
     return;
   }
@@ -1312,8 +1555,17 @@ function appendMarkedText(parent, block) {
     superscript: false,
     subscript: false,
     color: null,
-    fontSize: null
+    fontSize: null,
+    highlighted: false
   }));
+
+  highlightRanges.forEach((range) => {
+    const start = clamp(range.start, 0, characters.length);
+    const end = clamp(range.end, start, characters.length);
+    for (let index = start; index < end; index += 1) {
+      characters[index].highlighted = true;
+    }
+  });
 
   block.marks.forEach((mark) => {
     const start = clamp(mark.start, 0, characters.length);
@@ -1337,12 +1589,13 @@ function appendMarkedText(parent, block) {
       superscript: item.superscript,
       subscript: item.subscript,
       color: item.color,
-      fontSize: item.fontSize
+      fontSize: item.fontSize,
+      highlighted: item.highlighted
     });
   }
 
   function appendRun(text, style) {
-    if (!style.bold && !style.italic && !style.underline && !style.superscript && !style.subscript && !style.color && !style.fontSize) {
+    if (!style.bold && !style.italic && !style.underline && !style.superscript && !style.subscript && !style.color && !style.fontSize && !style.highlighted) {
       parent.appendChild(document.createTextNode(text));
       return;
     }
@@ -1364,6 +1617,9 @@ function appendMarkedText(parent, block) {
     }
     if (style.fontSize) {
       element.style.fontSize = `${style.fontSize}px`;
+    }
+    if (style.highlighted) {
+      element.classList.add("text-match-highlight");
     }
   }
 
@@ -1387,12 +1643,17 @@ function appendMarkedText(parent, block) {
   }
 }
 
-function renderBlockContent(parent, block) {
+function renderBlockContent(parent, block, highlightRanges = []) {
   parent.textContent = "";
-  appendMarkedText(parent, block);
+  appendMarkedText(parent, block, highlightRanges);
   if (!block.text) {
     parent.appendChild(document.createElement("br"));
   }
+}
+
+function renderPlainTextContent(parent, text, highlightRanges = []) {
+  parent.textContent = "";
+  appendMarkedText(parent, { text: String(text || ""), marks: [] }, highlightRanges);
 }
 
 function createEditorBlock(block, index) {
@@ -2371,6 +2632,7 @@ function beginEditing(cell, note) {
     return;
   }
 
+  clearTextMatchHighlights();
   if (editingState) {
     stopEditing({ commit: true });
   }
@@ -2583,6 +2845,7 @@ function renderCell(cell) {
   const element = document.createElement("article");
   const size = getCellSize(cell.coord);
   const cellNumber = getBoardIndex(cell.coord.x, cell.coord.y, cell.coord.z) + 1;
+  const boardKey = getBoardKeyFromCoord(cell.coord);
   let cellPointerStart = null;
   element.className = "cell";
   element.dataset.cellId = cell.id;
@@ -2651,6 +2914,8 @@ function renderCell(cell) {
     selectCell(cell);
     beginEditing(cell, note);
   });
+  note.addEventListener("pointermove", handleNoteTextMatchPointerMove);
+  note.addEventListener("pointerleave", clearTextMatchHighlights);
 
   const rowList = document.createElement("ul");
   rowList.className = "note-lines";
@@ -2661,8 +2926,11 @@ function renderCell(cell) {
     const lineContent = document.createElement("span");
     item.className = "note-line";
     lineContent.className = "note-line-content";
+    item.dataset.boardKey = boardKey;
+    item.dataset.blockIndex = String(index);
+    item.dataset.textMatchLine = "true";
     applyListMarkerData(item, block, numberCounters);
-    renderBlockContent(lineContent, block);
+    renderBlockContent(lineContent, block, getTextMatchHighlightRanges(getTextMatchLineId(boardKey, index)));
     item.title = block.text;
     item.dataset.empty = block.text ? "false" : "true";
     item.dataset.row = String(index + 1);
@@ -2678,13 +2946,22 @@ function renderCell(cell) {
   detailLabel.className = "detail-label";
   detailLabel.textContent = cell.label;
 
-  const detailTitle = document.createElement("strong");
-  detailTitle.textContent = cell.content.title;
+  const detailLines = document.createElement("div");
+  detailLines.className = "detail-lines";
+  cell.content.blocks.forEach((block, index) => {
+    const detailLine = document.createElement(index === 0 ? "strong" : "p");
+    const detailLineContent = document.createElement("span");
+    detailLine.className = "detail-line";
+    detailLineContent.className = "detail-line-content";
+    detailLine.dataset.boardKey = boardKey;
+    detailLine.dataset.blockIndex = String(index);
+    detailLine.dataset.textMatchLine = "true";
+    renderBlockContent(detailLineContent, normalizeBlock(block, index), getTextMatchHighlightRanges(getTextMatchLineId(boardKey, index)));
+    detailLine.appendChild(detailLineContent);
+    detailLines.appendChild(detailLine);
+  });
 
-  const detailPoints = document.createElement("p");
-  detailPoints.textContent = cell.content.points.join(" / ");
-
-  detail.append(detailLabel, detailTitle, detailPoints);
+  detail.append(detailLabel, detailLines);
   note.append(rowList, detail);
   noteAnchor.appendChild(note);
 
@@ -3238,7 +3515,12 @@ function renderExcelTableRows() {
       const cell = document.createElement("span");
       const value = row.cells[column.id];
       cell.className = `excel-cell excel-cell-${column.id}`;
-      cell.textContent = value;
+      if (column.id === "name") {
+        renderPlainTextContent(cell, value, getTextMatchHighlightRanges(getExcelTextMatchLineId(index, column.id)));
+        cell.dataset.textMatchLine = "true";
+      } else {
+        cell.textContent = value;
+      }
       cell.title = value;
       cell.contentEditable = "true";
       cell.spellcheck = false;
@@ -3249,6 +3531,14 @@ function renderExcelTableRows() {
       cell.addEventListener("blur", handleExcelCellBlur);
       cell.addEventListener("keydown", handleExcelCellKeydown);
       cell.addEventListener("paste", handleExcelCellPaste);
+      if (column.id === "name") {
+        cell.addEventListener("mouseenter", () => {
+          if (cell !== document.activeElement && String(row.cells[column.id] || "").trim()) {
+            showTextMatchesForExcelLine(index, column.id);
+          }
+        });
+        cell.addEventListener("mouseleave", clearTextMatchHighlights);
+      }
 
       element.appendChild(cell);
     });
@@ -3307,7 +3597,13 @@ function renderExcelColumnHeaderRow({ columns, gridTemplateColumns }) {
   return element;
 }
 
-function handleExcelCellFocus() {
+function handleExcelCellFocus(event) {
+  textMatchHighlightState = null;
+  if (event.currentTarget?.dataset.textMatchLine) {
+    const rowIndex = Number.parseInt(event.currentTarget.dataset.rowIndex, 10);
+    const columnId = event.currentTarget.dataset.columnId;
+    renderPlainTextContent(event.currentTarget, state.excelTable.rows[rowIndex]?.cells?.[columnId] || "");
+  }
   if (!excelEditSnapshot) {
     excelEditSnapshot = createHistorySnapshot();
   }
@@ -3613,6 +3909,7 @@ function handleExcelRowResizeEnd(event) {
 }
 
 function renderCells() {
+  textMatchHighlightState = null;
   syncSliceSizesToDimensions();
   state.operatorSize = normalizeOperatorSize(state.operatorSize);
   buildCells();
@@ -4376,6 +4673,8 @@ updateFormatToolbarState();
 scene.addEventListener("pointerdown", handleExcelTablePointerCapture, true);
 scene.addEventListener("pointerdown", handlePointerDown);
 scene.addEventListener("pointermove", handlePointerMove);
+cuboid.addEventListener("pointermove", handleCuboidTextMatchPointerMove);
+cuboid.addEventListener("pointerleave", clearTextMatchHighlights);
 scene.addEventListener("pointerup", handlePointerUp);
 scene.addEventListener("pointercancel", handlePointerUp);
 scene.addEventListener("click", handleExcelTableClickCapture, true);

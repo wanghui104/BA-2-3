@@ -1082,6 +1082,13 @@ body.is-resizing-excel-row * {
   white-space: pre-wrap;
 }
 
+.text-match-highlight {
+  border-radius: 3px;
+  background: rgba(255, 214, 64, 0.72);
+  box-shadow: 0 0 0 1px rgba(189, 124, 0, 0.24);
+  pointer-events: none;
+}
+
 .note-line[data-indent="1"] { --indent: 1; }
 .note-line[data-indent="2"] { --indent: 2; }
 .note-line[data-indent="3"] { --indent: 3; }
@@ -1167,15 +1174,22 @@ body.is-resizing-excel-row * {
   line-height: 1.2;
 }
 
-.detail-popover strong {
+.detail-lines {
+  display: grid;
+  gap: 4px;
+}
+
+.detail-line {
+  margin: 0;
+}
+
+.detail-line:first-child {
   display: block;
-  margin-bottom: 5px;
   font-size: 13px;
   line-height: 1.25;
 }
 
-.detail-popover p {
-  margin: 0;
+.detail-line:not(:first-child) {
   color: #344054;
   font-size: 12px;
   line-height: 1.45;
