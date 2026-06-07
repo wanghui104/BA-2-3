@@ -47,7 +47,7 @@ const BLOCK_TYPES = {
   NUMBERED: "numbered"
 };
 const INLINE_MARK_TYPES = new Set(["superscript", "subscript", "bold", "italic", "underline", "color", "fontSize"]);
-const FORMAT_SIZE_MIN = 8;
+const FORMAT_SIZE_MIN = 2;
 const FORMAT_SIZE_MAX = 24;
 const FORMAT_SIZE_STEP = 1;
 const INDENT_MIN = 0;
@@ -1398,7 +1398,6 @@ function renderBlockContent(parent, block) {
 function createEditorBlock(block, index) {
   const element = document.createElement("div");
   element.className = "editor-block";
-  element.contentEditable = "true";
   element.dataset.type = block.type;
   element.dataset.indent = String(block.indent);
   if (block.listStyle) {
@@ -1408,6 +1407,11 @@ function createEditorBlock(block, index) {
   element.spellcheck = false;
   renderBlockContent(element, block);
   return element;
+}
+
+function focusEditableHost(element) {
+  const host = element?.closest?.("[contenteditable='true']");
+  (host || element)?.focus?.();
 }
 
 function createEditorBlocks(blocks) {
@@ -1435,13 +1439,57 @@ function getActiveEditorBlock(editor) {
 }
 
 function placeCaretAtEnd(element) {
-  element.focus();
+  focusEditableHost(element);
   const range = document.createRange();
   range.selectNodeContents(element);
   range.collapse(false);
   const selection = window.getSelection();
   selection.removeAllRanges();
   selection.addRange(range);
+}
+
+function placeCaretAtStart(element) {
+  focusEditableHost(element);
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  range.collapse(true);
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function isEditorBlockEmpty(block) {
+  return !String(block?.textContent || "").trim();
+}
+
+function removeEmptyEditorBlock(editor, key, direction) {
+  const block = getActiveEditorBlock(editor);
+  if (!block || !isEditorBlockEmpty(block)) {
+    return false;
+  }
+
+  const blocks = [...editor.querySelectorAll(".editor-block")];
+  if (blocks.length <= 1) {
+    return false;
+  }
+
+  const index = blocks.indexOf(block);
+  const nextBlock = direction === "forward"
+    ? blocks[index + 1] || blocks[index - 1]
+    : blocks[index - 1] || blocks[index + 1];
+  const moveToStart = nextBlock === blocks[index + 1];
+
+  block.remove();
+  updateEditorStateFromDom(editor, key);
+  if (nextBlock) {
+    if (moveToStart) {
+      placeCaretAtStart(nextBlock);
+    } else {
+      placeCaretAtEnd(nextBlock);
+    }
+  }
+  updateFormatToolbarState();
+  return true;
 }
 
 function getTextAndMarksFromEditorBlock(element) {
@@ -1645,7 +1693,7 @@ function runFormatAction(action, listStyle = null) {
   }
 
   const { editor, key } = editingState;
-  getActiveEditorBlock(editor)?.focus();
+  focusEditableHost(getActiveEditorBlock(editor) || editor);
 
   if (action === "bold" || action === "italic" || action === "underline" || action === "superscript" || action === "subscript") {
     selectActiveBlockWhenCollapsed(editor);
@@ -1680,7 +1728,7 @@ function setFormatSize(size) {
   }
 
   const { editor, key } = editingState;
-  getActiveEditorBlock(editor)?.focus();
+  focusEditableHost(getActiveEditorBlock(editor) || editor);
   applyFontSize(editor, size);
   updateEditorStateFromDom(editor, key);
   updateFormatToolbarState();
@@ -1692,7 +1740,7 @@ function setFormatColor(color) {
   }
 
   const { editor, key } = editingState;
-  getActiveEditorBlock(editor)?.focus();
+  focusEditableHost(getActiveEditorBlock(editor) || editor);
   applyTextColor(editor, color);
   updateEditorStateFromDom(editor, key);
   updateFormatToolbarState();
@@ -2340,6 +2388,10 @@ function beginEditing(cell, note) {
 
   const blockList = document.createElement("div");
   blockList.className = "rich-editor-blocks";
+  blockList.contentEditable = "true";
+  blockList.spellcheck = false;
+  blockList.setAttribute("role", "textbox");
+  blockList.setAttribute("aria-multiline", "true");
   blockList.appendChild(createEditorBlocks(originalBlocks));
   editor.appendChild(blockList);
   updateEditorMarkers(editor);
@@ -2368,8 +2420,17 @@ function beginEditing(cell, note) {
       return;
     }
 
+    if (event.key === "Backspace" || event.key === "Delete") {
+      const direction = event.key === "Delete" ? "forward" : "backward";
+      if (removeEmptyEditorBlock(editor, key, direction)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      return;
+    }
+
     if (event.key === "Enter") {
-      const block = getEditorBlockFromEventTarget(event.target);
+      const block = getActiveEditorBlock(editor);
       if (block) {
         event.preventDefault();
         event.stopPropagation();
@@ -2597,12 +2658,15 @@ function renderCell(cell) {
   const numberCounters = Array.from({ length: INDENT_MAX + 1 }, () => 0);
   getNoteBlocks(cell).forEach((block, index) => {
     const item = document.createElement("li");
+    const lineContent = document.createElement("span");
     item.className = "note-line";
+    lineContent.className = "note-line-content";
     applyListMarkerData(item, block, numberCounters);
-    renderBlockContent(item, block);
+    renderBlockContent(lineContent, block);
     item.title = block.text;
     item.dataset.empty = block.text ? "false" : "true";
     item.dataset.row = String(index + 1);
+    item.appendChild(lineContent);
     rowList.appendChild(item);
   });
 
@@ -4610,7 +4674,7 @@ document.addEventListener("click", (event) => {
       && event.clientY <= rect.bottom;
 
     if (editingState.editor.contains(event.target) || isInsideNote) {
-      getActiveEditorBlock(editingState.editor)?.focus();
+      focusEditableHost(getActiveEditorBlock(editingState.editor) || editingState.editor);
       return;
     }
 

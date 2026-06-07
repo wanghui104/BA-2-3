@@ -924,7 +924,8 @@ body.is-resizing-excel-row * {
   left: 0;
   top: 0;
   width: calc(var(--w) * 0.92);
-  height: calc(var(--note-line) * var(--note-rows) + var(--note-pad) * 2);
+  min-height: calc(var(--note-line) * var(--note-rows) + var(--note-pad) * 2);
+  height: auto;
   padding: var(--note-pad);
   border: 1px solid rgba(28, 36, 48, 0.14);
   border-radius: 6px;
@@ -990,25 +991,29 @@ body.is-resizing-excel-row * {
 }
 
 .rich-note-editor {
-  overflow: visible;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .rich-editor-blocks {
   display: grid;
   grid-auto-rows: var(--note-line);
+  width: max-content;
+  min-width: 100%;
   height: 100%;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .editor-block {
   --indent: 0;
-  min-width: 0;
+  width: max-content;
+  min-width: 100%;
   padding-left: calc(var(--indent, 0) * 10px);
   outline: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: pre;
 }
 
 .editor-block[data-indent="1"] { --indent: 1; }
@@ -1052,8 +1057,7 @@ body.is-resizing-excel-row * {
 }
 
 .note-lines {
-  display: grid;
-  grid-template-rows: repeat(var(--note-rows), var(--note-line));
+  display: block;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -1067,9 +1071,15 @@ body.is-resizing-excel-row * {
   font-size: var(--note-font);
   font-weight: 650;
   line-height: var(--note-line);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  white-space: normal;
+}
+
+.note-line-content {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .note-line[data-indent="1"] { --indent: 1; }
@@ -1086,6 +1096,13 @@ body.is-resizing-excel-row * {
   font-weight: 800;
 }
 
+.note-line[data-type="bullet"],
+.note-line[data-type="numbered"] {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  column-gap: 3px;
+}
+
 .note-line[data-type="bullet"]::before {
   content: attr(data-marker);
 }
@@ -1093,6 +1110,10 @@ body.is-resizing-excel-row * {
 .note-line[data-type="numbered"]::before {
   content: attr(data-marker);
   width: 14px;
+}
+
+.note-line[data-type="numbered"] {
+  grid-template-columns: 14px minmax(0, 1fr);
 }
 
 .note-line sup,
